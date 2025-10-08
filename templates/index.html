@@ -49,6 +49,7 @@
         
         <div class="info">
             Concurrent Downloads: <span id="activeCount">0</span> / {{ max_downloads }}
+            <button class="clear-inactive-btn" onclick="clearInactive()">🗑️ Clear Inactive</button>
         </div>
         
         <div id="downloads"></div>
@@ -214,6 +215,64 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;
+            }
+        }
+
+        async function clearInactive() {
+            if (!confirm('Clear all completed, cancelled, and error downloads?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/clear-inactive', { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 삭제된 항목들 애니메이션으로 제거
+                    document.querySelectorAll('.download-item.completed, .download-item.cancelled, .download-item.error').forEach(item => {
+                        item.style.opacity = '0';
+                        item.style.transform = 'translateX(100%)';
+                    });
+                    
+                    document.querySelectorAll('.playlist-group').forEach(group => {
+                        const playlistContent = group.querySelector('.playlist-content');
+                        const hasActiveItems = playlistContent.querySelector('.download-item.downloading, .download-item.queued');
+                        
+                        if (!hasActiveItems) {
+                            group.style.opacity = '0';
+                            group.style.transform = 'translateX(100%)';
+                        }
+                    });
+                    
+                    setTimeout(() => {
+                        document.querySelectorAll('.download-item.completed, .download-item.cancelled, .download-item.error').forEach(item => {
+                            const videoId = item.id.replace('item-', '');
+                            if (checkIntervals[videoId]) {
+                                clearInterval(checkIntervals[videoId]);
+                                delete checkIntervals[videoId];
+                            }
+                            item.remove();
+                        });
+                        
+                        document.querySelectorAll('.playlist-group').forEach(group => {
+                            const playlistContent = group.querySelector('.playlist-content');
+                            const hasActiveItems = playlistContent.querySelector('.download-item.downloading, .download-item.queued');
+                            
+                            if (!hasActiveItems) {
+                                const playlistId = group.id.replace('playlist-', '');
+                                if (playlistIntervals[playlistId]) {
+                                    clearInterval(playlistIntervals[playlistId]);
+                                    delete playlistIntervals[playlistId];
+                                }
+                                group.remove();
+                            }
+                        });
+                        
+                        alert(`Cleared ${data.deleted_videos} video(s) and ${data.deleted_playlists} playlist(s)`);
+                    }, 300);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
             }
         }
         

@@ -460,5 +460,34 @@ def download_file(video_id):
     
     return send_file(filepath, as_attachment=True, download_name=filename)
 
+@app.route('/clear-inactive', methods=['POST'])
+def clear_inactive():
+    inactive_statuses = ['completed', 'cancelled', 'error']
+    deleted_videos = []
+    deleted_playlists = []
+    
+    # 비활성 비디오 삭제
+    for video_id in list(download_status.keys()):
+        if download_status[video_id].get('status') in inactive_statuses:
+            deleted_videos.append(video_id)
+            del download_status[video_id]
+            if video_id in cancel_events:
+                del cancel_events[video_id]
+    
+    # 모든 비디오가 삭제된 플레이리스트 삭제
+    for playlist_id in list(playlist_groups.keys()):
+        playlist = playlist_groups[playlist_id]
+        remaining_videos = [vid for vid in playlist['video_ids'] if vid in download_status]
+        
+        if not remaining_videos:
+            deleted_playlists.append(playlist_id)
+            del playlist_groups[playlist_id]
+    
+    return jsonify({
+        'message': 'Inactive items cleared',
+        'deleted_videos': len(deleted_videos),
+        'deleted_playlists': len(deleted_playlists)
+    })
+
 if __name__ == '__main__':
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)

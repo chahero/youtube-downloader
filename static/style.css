@@ -165,6 +165,9 @@ button:disabled {
     font-size: 14px;
     color: #8b949e;
     border: 1px solid #30363d;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .info span {
@@ -476,6 +479,18 @@ button:disabled {
 
 .download-item.queued .progress {
     background: linear-gradient(90deg, #a371f7 0%, #8957e5 100%);
+}
+
+.clear-inactive-btn {
+    width: auto;
+    padding: 8px 16px;
+    font-size: 13px;
+    background: #6e7681;
+    margin: 0;
+}
+
+.clear-inactive-btn:hover {
+    background: #8b949e;
 }
 
 /* 반응형 */
