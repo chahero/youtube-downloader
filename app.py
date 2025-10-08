@@ -25,26 +25,51 @@ active_downloads = 0
 lock = threading.Lock()
 playlist_groups = {}
 
+def get_format_string(quality, format_type):
+    """화질과 포맷에 따른 yt-dlp 포맷 문자열 반환"""
+    if format_type == 'audio_mp3':
+        return 'bestaudio/best'
+    elif format_type == 'audio_m4a':
+        return 'bestaudio[ext=m4a]/bestaudio/best'
+    
+    # 비디오 포맷
+    quality_formats = {
+        'best': 'bestvideo+bestaudio/best',
+        '2160p': 'bestvideo[height<=2160]+bestaudio/best[height<=2160]',
+        '1440p': 'bestvideo[height<=1440]+bestaudio/best[height<=1440]',
+        '1080p': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+        '720p': 'bestvideo[height<=720]+bestaudio/best[height<=720]',
+        '480p': 'bestvideo[height<=480]+bestaudio/best[height<=480]',
+        '360p': 'bestvideo[height<=360]+bestaudio/best[height<=360]'
+    }
+    
+    return quality_formats.get(quality, 'bestvideo+bestaudio/best')
+
 def download_worker():
     global active_downloads
     
     while True:
-        video_id, url = download_queue.get()
+        video_data = download_queue.get()
         
-        if video_id is None:
+        if video_data is None:
             break
+        
+        video_id = video_data['video_id']
+        url = video_data['url']
+        quality = video_data.get('quality', 'best')
+        format_type = video_data.get('format_type', 'video')
         
         with lock:
             active_downloads += 1
         
-        download_video(video_id, url)
+        download_video(video_id, url, quality, format_type)
         
         with lock:
             active_downloads -= 1
         
         download_queue.task_done()
 
-def download_video(video_id, url):
+def download_video(video_id, url, quality='best', format_type='video'):
     try:
         download_status[video_id]['status'] = 'downloading'
         download_status[video_id]['message'] = 'Downloading...'
@@ -66,15 +91,29 @@ def download_video(video_id, url):
                 except:
                     pass
         
+        format_string = get_format_string(quality, format_type)
+        
         ydl_opts = {
-            'format': 'best',
+            'format': format_string,
             'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
             'progress_hooks': [progress_hook],
         }
         
+        # 오디오 전용일 때 postprocessor 추가
+        if format_type == 'audio_mp3':
+            ydl_opts['postprocessors'] = [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }]
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
+            
+            # mp3 변환 시 확장자 변경
+            if format_type == 'audio_mp3':
+                filename = os.path.splitext(filename)[0] + '.mp3'
         
         download_status[video_id].update({
             'status': 'completed',
@@ -117,15 +156,12 @@ def extract_playlist_info(url):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # 플레이리스트인지 확인
             if 'entries' in info:
                 videos = []
                 for entry in info['entries']:
                     if entry:
-                        # 썸네일 URL 가져오기
                         thumbnail = None
                         if 'thumbnails' in entry and entry['thumbnails']:
-                            # 가장 좋은 품질의 썸네일 선택
                             thumbnail = entry['thumbnails'][-1]['url']
                         elif 'thumbnail' in entry:
                             thumbnail = entry['thumbnail']
@@ -137,7 +173,6 @@ def extract_playlist_info(url):
                             'duration': entry.get('duration', 0)
                         })
                 
-                # 플레이리스트 썸네일
                 playlist_thumbnail = None
                 if 'thumbnails' in info and info['thumbnails']:
                     playlist_thumbnail = info['thumbnails'][-1]['url']
@@ -152,7 +187,6 @@ def extract_playlist_info(url):
                     'thumbnail': playlist_thumbnail
                 }
             else:
-                # 단일 비디오 - 상세 정보 가져오기
                 thumbnail = None
                 if 'thumbnails' in info and info['thumbnails']:
                     thumbnail = info['thumbnails'][-1]['url']
@@ -173,22 +207,24 @@ def extract_playlist_info(url):
 def start_download():
     data = request.json
     url = data.get('url', '').strip()
+    quality = data.get('quality', 'best')
+    format_type = data.get('format_type', 'video')
     
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
     
     try:
-        # URL 정보 추출
         info = extract_playlist_info(url)
         
         if info['is_playlist']:
-            # 플레이리스트 처리
             playlist_id = f"playlist_{datetime.now().timestamp()}"
             playlist_groups[playlist_id] = {
                 'title': info['title'],
                 'count': info['count'],
                 'video_ids': [],
-                'thumbnail': info.get('thumbnail')
+                'thumbnail': info.get('thumbnail'),
+                'quality': quality,
+                'format_type': format_type
             }
             
             video_ids = []
@@ -215,7 +251,9 @@ def start_download():
                         'playlist_id': playlist_id,
                         'playlist_title': info['title'],
                         'playlist_index': idx + 1,
-                        'playlist_count': info['count']
+                        'playlist_count': info['count'],
+                        'quality': quality,
+                        'format_type': format_type
                     }
                 else:
                     download_status[video_id] = {
@@ -229,10 +267,17 @@ def start_download():
                         'playlist_id': playlist_id,
                         'playlist_title': info['title'],
                         'playlist_index': idx + 1,
-                        'playlist_count': info['count']
+                        'playlist_count': info['count'],
+                        'quality': quality,
+                        'format_type': format_type
                     }
                 
-                download_queue.put((video_id, video['url']))
+                download_queue.put({
+                    'video_id': video_id,
+                    'url': video['url'],
+                    'quality': quality,
+                    'format_type': format_type
+                })
             
             return jsonify({
                 'message': f'Playlist download started ({info["count"]} videos)',
@@ -243,7 +288,6 @@ def start_download():
                 'thumbnail': info.get('thumbnail')
             })
         else:
-            # 단일 비디오 처리
             video_id = f"video_{datetime.now().timestamp()}"
             
             cancel_events[video_id] = threading.Event()
@@ -259,7 +303,9 @@ def start_download():
                     'url': url,
                     'video_title': info['title'],
                     'thumbnail': info.get('thumbnail'),
-                    'duration': info.get('duration', 0)
+                    'duration': info.get('duration', 0),
+                    'quality': quality,
+                    'format_type': format_type
                 }
             else:
                 download_status[video_id] = {
@@ -269,10 +315,17 @@ def start_download():
                     'url': url,
                     'video_title': info['title'],
                     'thumbnail': info.get('thumbnail'),
-                    'duration': info.get('duration', 0)
+                    'duration': info.get('duration', 0),
+                    'quality': quality,
+                    'format_type': format_type
                 }
             
-            download_queue.put((video_id, url))
+            download_queue.put({
+                'video_id': video_id,
+                'url': url,
+                'quality': quality,
+                'format_type': format_type
+            })
             
             return jsonify({
                 'message': 'Download started',
@@ -291,7 +344,6 @@ def get_status(video_id):
 
 @app.route('/playlist-status/<playlist_id>')
 def get_playlist_status(playlist_id):
-    """플레이리스트 전체 상태 확인"""
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
     
@@ -316,7 +368,9 @@ def get_playlist_status(playlist_id):
         'title': playlist['title'],
         'total': playlist['count'],
         'statuses': statuses,
-        'thumbnail': playlist.get('thumbnail')
+        'thumbnail': playlist.get('thumbnail'),
+        'quality': playlist.get('quality'),
+        'format_type': playlist.get('format_type')
     })
 
 @app.route('/cancel/<video_id>', methods=['POST'])
@@ -328,7 +382,6 @@ def cancel_download(video_id):
 
 @app.route('/cancel-playlist/<playlist_id>', methods=['POST'])
 def cancel_playlist(playlist_id):
-    """플레이리스트 전체 취소"""
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
     
@@ -364,7 +417,6 @@ def delete_download(video_id):
 
 @app.route('/delete-playlist/<playlist_id>', methods=['DELETE'])
 def delete_playlist(playlist_id):
-    """플레이리스트 전체 삭제"""
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
     
@@ -380,7 +432,6 @@ def delete_playlist(playlist_id):
                     del cancel_events[video_id]
                 deleted_count += 1
     
-    # 플레이리스트 그룹 삭제
     del playlist_groups[playlist_id]
     
     return jsonify({

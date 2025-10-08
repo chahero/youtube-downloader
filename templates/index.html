@@ -12,6 +12,31 @@
         
         <div class="input-section">
             <input type="text" id="url" placeholder="Enter YouTube URL or Playlist URL">
+            
+            <div class="options-row">
+                <div class="option-group">
+                    <label for="quality">Quality:</label>
+                    <select id="quality">
+                        <option value="best">Best</option>
+                        <option value="2160p">2160p (4K)</option>
+                        <option value="1440p">1440p (2K)</option>
+                        <option value="1080p" selected>1080p (Full HD)</option>
+                        <option value="720p">720p (HD)</option>
+                        <option value="480p">480p</option>
+                        <option value="360p">360p</option>
+                    </select>
+                </div>
+                
+                <div class="option-group">
+                    <label for="format">Format:</label>
+                    <select id="format">
+                        <option value="video">Video (MP4)</option>
+                        <option value="audio_mp3">Audio Only (MP3)</option>
+                        <option value="audio_m4a">Audio Only (M4A)</option>
+                    </select>
+                </div>
+            </div>
+            
             <button onclick="startDownload()">Start Download</button>
         </div>
         
@@ -26,6 +51,18 @@
         let checkIntervals = {};
         let playlistIntervals = {};
 
+        // 포맷 선택 시 화질 옵션 비활성화/활성화
+        document.getElementById('format').addEventListener('change', function() {
+            const qualitySelect = document.getElementById('quality');
+            if (this.value.startsWith('audio_')) {
+                qualitySelect.disabled = true;
+                qualitySelect.style.opacity = '0.5';
+            } else {
+                qualitySelect.disabled = false;
+                qualitySelect.style.opacity = '1';
+            }
+        });
+
         function formatDuration(seconds) {
             if (!seconds) return '';
             const hours = Math.floor(seconds / 3600);
@@ -37,9 +74,27 @@
             }
             return `${minutes}:${String(secs).padStart(2, '0')}`;
         }
+        
+        function getQualityBadge(quality, format_type) {
+            if (format_type === 'audio_mp3') return '🎵 MP3';
+            if (format_type === 'audio_m4a') return '🎵 M4A';
+            
+            const badges = {
+                'best': '⭐ Best',
+                '2160p': '🎬 4K',
+                '1440p': '🎬 2K',
+                '1080p': '📺 1080p',
+                '720p': '📺 720p',
+                '480p': '📺 480p',
+                '360p': '📺 360p'
+            };
+            return badges[quality] || quality;
+        }
 
         async function startDownload() {
             const url = document.getElementById('url').value.trim();
+            const quality = document.getElementById('quality').value;
+            const format_type = document.getElementById('format').value;
             
             if (!url) {
                 alert('Please enter a URL');
@@ -55,7 +110,11 @@
                 const response = await fetch('/download', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ url: url })
+                    body: JSON.stringify({ 
+                        url: url,
+                        quality: quality,
+                        format_type: format_type
+                    })
                 });
                 
                 const data = await response.json();
@@ -102,6 +161,7 @@
                     <div class="playlist-info">
                         <span class="playlist-title" id="playlist-title-${playlistId}">Playlist (${count} videos)</span>
                         <span class="playlist-status" id="playlist-status-${playlistId}">Processing...</span>
+                        <span class="playlist-quality" id="playlist-quality-${playlistId}"></span>
                     </div>
                     <div class="playlist-actions">
                         <button class="cancel-playlist-btn" onclick="cancelPlaylist('${playlistId}')">Cancel All</button>
@@ -143,6 +203,8 @@
                         playlistBadge = `<span class="playlist-badge">${data.playlist_index}/${data.playlist_count}</span>`;
                     }
                     
+                    const qualityBadge = `<span class="quality-badge">${getQualityBadge(data.quality, data.format_type)}</span>`;
+                    
                     const thumbnailHtml = data.thumbnail || thumbnail
                         ? `<img src="${data.thumbnail || thumbnail}" alt="Video thumbnail" class="video-thumbnail">`
                         : '<div class="video-thumbnail-placeholder">🎬</div>';
@@ -159,7 +221,7 @@
                             </div>
                             <div class="item-details">
                                 <div class="item-header">
-                                    <div class="url">${playlistBadge}${displayUrl}</div>
+                                    <div class="url">${playlistBadge}${qualityBadge}${displayUrl}</div>
                                     <div class="action-buttons">
                                         <button class="download-file-btn" id="download-file-${videoId}" onclick="downloadFile('${videoId}')" style="display: none;">⬇</button>
                                         <button class="cancel-btn" id="cancel-${videoId}" onclick="cancelDownload('${videoId}')">✕</button>
@@ -240,6 +302,7 @@
                     
                     const titleElem = document.getElementById('playlist-title-' + playlistId);
                     const statusElem = document.getElementById('playlist-status-' + playlistId);
+                    const qualityElem = document.getElementById('playlist-quality-' + playlistId);
                     const cancelBtn = document.querySelector(`#playlist-${playlistId} .cancel-playlist-btn`);
                     const deleteBtn = document.querySelector(`#playlist-${playlistId} .delete-playlist-btn`);
                     
@@ -250,6 +313,10 @@
                     if (statusElem) {
                         const s = data.statuses;
                         statusElem.textContent = `✓${s.completed} ⏳${s.downloading} ⏸${s.queued} ✕${s.cancelled} ✗${s.error}`;
+                    }
+                    
+                    if (qualityElem && data.quality) {
+                        qualityElem.textContent = getQualityBadge(data.quality, data.format_type);
                     }
                     
                     const activeCount = data.statuses.downloading + data.statuses.queued;
