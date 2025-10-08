@@ -13,9 +13,11 @@ ENV/
 
 # Flask
 instance/
-.env
 *.db
 *.sqlite
+
+# 환경변수
+.env
 
 # 다운로드 파일
 downloads/*
@@ -40,7 +42,3 @@ desktop.ini
 *.egg-info/
 dist/
 build/
-
-# 기타
-/output
-/downloads

@@ -4,14 +4,21 @@ import os
 import threading
 from datetime import datetime
 from queue import Queue
-import time
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 app = Flask(__name__)
 
-DOWNLOAD_FOLDER = './downloads'
-os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+# 환경변수에서 설정 로드
+DOWNLOAD_FOLDER = os.getenv('DOWNLOAD_FOLDER', './downloads')
+MAX_CONCURRENT_DOWNLOADS = int(os.getenv('MAX_CONCURRENT_DOWNLOADS', 3))
+FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
+FLASK_PORT = int(os.getenv('FLASK_PORT', 5000))
+FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
 
-MAX_CONCURRENT_DOWNLOADS = 3  # 동시 다운로드 개수
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 # 다운로드 상태 및 취소 이벤트 저장
 download_status = {}
@@ -104,7 +111,7 @@ for _ in range(MAX_CONCURRENT_DOWNLOADS):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', max_downloads=MAX_CONCURRENT_DOWNLOADS)
 
 @app.route('/download', methods=['POST'])
 def start_download():
@@ -158,5 +165,23 @@ def cancel_download(video_id):
         return jsonify({'message': '취소 요청됨'})
     return jsonify({'error': '찾을 수 없음'}), 404
 
+@app.route('/delete/<video_id>', methods=['DELETE'])
+def delete_download(video_id):
+    """목록에서 다운로드 항목 삭제"""
+    if video_id in download_status:
+        # 진행 중인 다운로드는 삭제 불가
+        status = download_status[video_id].get('status')
+        if status in ['downloading', 'queued']:
+            return jsonify({'error': '진행 중인 다운로드는 먼저 취소해주세요'}), 400
+        
+        # 상태에서 제거
+        del download_status[video_id]
+        if video_id in cancel_events:
+            del cancel_events[video_id]
+        
+        return jsonify({'message': '삭제 완료'})
+    
+    return jsonify({'error': '찾을 수 없음'}), 404
+
 if __name__ == '__main__':
-    app.run(debug=True, threaded=True)
+    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)
