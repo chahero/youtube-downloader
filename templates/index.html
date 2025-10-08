@@ -11,7 +11,7 @@
         <h1>🎥 YouTube Downloader</h1>
         
         <div class="input-section">
-            <input type="text" id="url" placeholder="Enter YouTube URL">
+            <input type="text" id="url" placeholder="Enter YouTube URL or Playlist URL">
             <button onclick="startDownload()">Start Download</button>
         </div>
         
@@ -24,6 +24,7 @@
 
     <script>
         let checkIntervals = {};
+        let playlistIntervals = {};
 
         async function startDownload() {
             const url = document.getElementById('url').value.trim();
@@ -32,6 +33,12 @@
                 alert('Please enter a URL');
                 return;
             }
+            
+            // 로딩 표시
+            const btn = document.querySelector('.input-section button');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
             
             try {
                 const response = await fetch('/download', {
@@ -43,39 +50,192 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    addDownloadItem(data.video_id, url);
-                    checkStatus(data.video_id);
+                    if (data.is_playlist) {
+                        // 플레이리스트 그룹 추가
+                        addPlaylistGroup(data.playlist_id, data.video_ids, data.count);
+                        
+                        // 각 비디오 항목 추가
+                        data.video_ids.forEach(videoId => {
+                            checkStatus(videoId);
+                        });
+                        
+                        // 플레이리스트 상태 체크 시작
+                        checkPlaylistStatus(data.playlist_id);
+                    } else {
+                        // 단일 비디오
+                        addDownloadItem(data.video_id, url);
+                        checkStatus(data.video_id);
+                    }
+                    
                     document.getElementById('url').value = '';
                 } else {
                     alert('Error: ' + data.error);
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
             }
         }
         
-        function addDownloadItem(videoId, url) {
+        function addPlaylistGroup(playlistId, videoIds, count) {
             const downloadsDiv = document.getElementById('downloads');
-            const item = document.createElement('div');
-            item.className = 'download-item';
-            item.id = 'item-' + videoId;
-            item.innerHTML = `
-                <div class="item-header">
-                    <div class="url">${url}</div>
-                    <div class="action-buttons">
-                        <button class="download-file-btn" id="download-file-${videoId}" onclick="downloadFile('${videoId}')" style="display: none;">⬇</button>
-                        <button class="cancel-btn" id="cancel-${videoId}" onclick="cancelDownload('${videoId}')">✕</button>
-                        <button class="delete-btn" id="delete-${videoId}" onclick="deleteDownload('${videoId}')" style="display: none;">🗑</button>
+            const group = document.createElement('div');
+            group.className = 'playlist-group';
+            group.id = 'playlist-' + playlistId;
+            group.innerHTML = `
+                <div class="playlist-header">
+                    <div class="playlist-info">
+                        <span class="playlist-icon">📋</span>
+                        <span class="playlist-title" id="playlist-title-${playlistId}">Playlist (${count} videos)</span>
+                        <span class="playlist-status" id="playlist-status-${playlistId}">Processing...</span>
+                    </div>
+                    <div class="playlist-actions">
+                        <button class="cancel-playlist-btn" onclick="cancelPlaylist('${playlistId}')">Cancel All</button>
+                        <button class="delete-playlist-btn" onclick="deletePlaylist('${playlistId}')" style="display: none;">Delete All</button>
+                        <button class="toggle-btn" onclick="togglePlaylist('${playlistId}')">▼</button>
                     </div>
                 </div>
-                <div class="status" id="status-${videoId}">Waiting...</div>
-                <div class="progress-bar">
-                    <div class="progress" id="progress-${videoId}" style="width: 0%">
-                        <span class="progress-text" id="progress-text-${videoId}">0%</span>
-                    </div>
+                <div class="playlist-content" id="playlist-content-${playlistId}">
                 </div>
             `;
-            downloadsDiv.insertBefore(item, downloadsDiv.firstChild);
+            downloadsDiv.insertBefore(group, downloadsDiv.firstChild);
+        }
+        
+        function addDownloadItem(videoId, url, isPlaylist = false) {
+            let container;
+            
+            // 상태를 먼저 가져와서 플레이리스트 여부 확인
+            fetch(`/status/${videoId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.playlist_id) {
+                        container = document.getElementById('playlist-content-' + data.playlist_id);
+                    } else {
+                        container = document.getElementById('downloads');
+                    }
+                    
+                    if (!container) return;
+                    
+                    const item = document.createElement('div');
+                    item.className = 'download-item';
+                    item.id = 'item-' + videoId;
+                    
+                    let displayUrl = url;
+                    if (data.video_title) {
+                        displayUrl = data.video_title;
+                    }
+                    
+                    let playlistBadge = '';
+                    if (data.playlist_id) {
+                        playlistBadge = `<span class="playlist-badge">${data.playlist_index}/${data.playlist_count}</span>`;
+                    }
+                    
+                    item.innerHTML = `
+                        <div class="item-header">
+                            <div class="url">${playlistBadge}${displayUrl}</div>
+                            <div class="action-buttons">
+                                <button class="download-file-btn" id="download-file-${videoId}" onclick="downloadFile('${videoId}')" style="display: none;">⬇</button>
+                                <button class="cancel-btn" id="cancel-${videoId}" onclick="cancelDownload('${videoId}')">✕</button>
+                                <button class="delete-btn" id="delete-${videoId}" onclick="deleteDownload('${videoId}')" style="display: none;">🗑</button>
+                            </div>
+                        </div>
+                        <div class="status" id="status-${videoId}">Waiting...</div>
+                        <div class="progress-bar">
+                            <div class="progress" id="progress-${videoId}" style="width: 0%">
+                                <span class="progress-text" id="progress-text-${videoId}">0%</span>
+                            </div>
+                        </div>
+                    `;
+                    
+                    if (data.playlist_id) {
+                        container.appendChild(item);
+                    } else {
+                        container.insertBefore(item, container.firstChild);
+                    }
+                });
+        }
+        
+        function togglePlaylist(playlistId) {
+            const content = document.getElementById('playlist-content-' + playlistId);
+            const btn = event.target;
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                btn.textContent = '▼';
+            } else {
+                content.style.display = 'none';
+                btn.textContent = '▶';
+            }
+        }
+        
+        async function cancelPlaylist(playlistId) {
+            if (!confirm('Cancel all downloads in this playlist?')) {
+                return;
+            }
+            
+            try {
+                await fetch(`/cancel-playlist/${playlistId}`, { method: 'POST' });
+            } catch (error) {
+                console.error('Cancel playlist error:', error);
+            }
+        }
+        
+        async function deletePlaylist(playlistId) {
+            try {
+                const response = await fetch(`/delete-playlist/${playlistId}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const group = document.getElementById('playlist-' + playlistId);
+                    group.style.opacity = '0';
+                    group.style.transform = 'translateX(100%)';
+                    
+                    setTimeout(() => {
+                        group.remove();
+                        clearInterval(playlistIntervals[playlistId]);
+                        delete playlistIntervals[playlistId];
+                    }, 300);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Delete error: ' + error.message);
+            }
+        }
+        
+        async function checkPlaylistStatus(playlistId) {
+            playlistIntervals[playlistId] = setInterval(async () => {
+                try {
+                    const response = await fetch(`/playlist-status/${playlistId}`);
+                    const data = await response.json();
+                    
+                    const titleElem = document.getElementById('playlist-title-' + playlistId);
+                    const statusElem = document.getElementById('playlist-status-' + playlistId);
+                    const cancelBtn = document.querySelector(`#playlist-${playlistId} .cancel-playlist-btn`);
+                    const deleteBtn = document.querySelector(`#playlist-${playlistId} .delete-playlist-btn`);
+                    
+                    if (titleElem) {
+                        titleElem.textContent = `${data.title} (${data.total} videos)`;
+                    }
+                    
+                    if (statusElem) {
+                        const s = data.statuses;
+                        statusElem.textContent = `✓${s.completed} ⏳${s.downloading} ⏸${s.queued} ✕${s.cancelled} ✗${s.error}`;
+                    }
+                    
+                    // 모든 다운로드가 완료/취소/에러 상태면 버튼 변경
+                    const activeCount = data.statuses.downloading + data.statuses.queued;
+                    if (activeCount === 0) {
+                        if (cancelBtn) cancelBtn.style.display = 'none';
+                        if (deleteBtn) deleteBtn.style.display = 'inline-block';
+                        clearInterval(playlistIntervals[playlistId]);
+                    }
+                } catch (error) {
+                    console.error('Playlist status check error:', error);
+                }
+            }, 1000);
         }
         
         async function cancelDownload(videoId) {
@@ -118,6 +278,29 @@
         }
         
         async function checkStatus(videoId) {
+            // 첫 호출에서 항목 추가
+            const response = await fetch(`/status/${videoId}`);
+            const initialData = await response.json();
+            
+            if (initialData.playlist_id) {
+                // 플레이리스트의 일부인 경우, 컨테이너가 준비될 때까지 대기
+                let attempts = 0;
+                const waitForContainer = setInterval(() => {
+                    const container = document.getElementById('playlist-content-' + initialData.playlist_id);
+                    if (container || attempts > 10) {
+                        clearInterval(waitForContainer);
+                        if (!document.getElementById('item-' + videoId)) {
+                            addDownloadItem(videoId, initialData.url, true);
+                        }
+                    }
+                    attempts++;
+                }, 100);
+            } else {
+                if (!document.getElementById('item-' + videoId)) {
+                    addDownloadItem(videoId, initialData.url, false);
+                }
+            }
+            
             checkIntervals[videoId] = setInterval(async () => {
                 try {
                     const response = await fetch(`/status/${videoId}`);
@@ -130,6 +313,8 @@
                     const cancelBtn = document.getElementById('cancel-' + videoId);
                     const deleteBtn = document.getElementById('delete-' + videoId);
                     const downloadFileBtn = document.getElementById('download-file-' + videoId);
+                    
+                    if (!itemDiv) return;
                     
                     if (data.status === 'queued') {
                         statusDiv.textContent = data.message;
