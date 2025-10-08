@@ -1,4 +1,4 @@
-`# YouTube Downloader
+# YouTube Downloader
 
 A web-based YouTube video downloader built with Flask and yt-dlp.
 
@@ -15,29 +15,31 @@ A web-based YouTube video downloader built with Flask and yt-dlp.
 
 ## Tech Stack
 
-- ****Backend****: Flask (Python)
-- ****Frontend****: HTML, CSS, JavaScript
-- ****Downloader****: yt-dlp
-- ****Environment****: python-dotenv
+- **Backend**: Flask (Python)
+- **Frontend**: HTML, CSS, JavaScript
+- **Downloader**: yt-dlp
+- **Environment**: python-dotenv
 
-## Project Structure`
+## Project Structure
 
+```
 youtube-downloader/
 ├── app.py                  # Flask application
 ├── requirements.txt        # Python dependencies
 ├── .env                    # Environment configuration
 ├── .env.example           # Environment template
 ├── .gitignore             # Git ignore rules
-├── run.bat                # Windows run script
-├── run.sh                 # Linux/macOS run script
+├── start.bat              # Windows run script
+├── start.sh               # Linux/macOS run script
 ├── templates/
 │   └── index.html         # Web interface
 ├── static/
 │   └── style.css          # Stylesheet
 └── downloads/             # Downloaded files directory
-└── .gitkeep
+    └── .gitkeep
+```
 
-`## Installation
+## Installation
 
 ### Prerequisites
 
@@ -49,49 +51,50 @@ youtube-downloader/
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd youtube-downloader`
+cd youtube-downloader
+```
 
-1. Create virtual environment:
+2. Create virtual environment:
 
-bash
-
-`*# Windows*
+```bash
+# Windows
 python -m venv .venv
 .venv\Scripts\activate
 
-*# Linux/macOS*
+# Linux/macOS
 python3 -m venv .venv
-source .venv/bin/activate`
+source .venv/bin/activate
+```
 
-1. Install dependencies:
+3. Install dependencies:
 
-bash
+```bash
+pip install -r requirements.txt
+```
 
-`pip install -r requirements.txt`
+4. Configure environment variables:
 
-1. Configure environment variables:
-
-bash
-
-`*# Copy example config*
+```bash
+# Copy example config
 cp .env.example .env
 
-*# Edit .env with your settings*`
+# Edit .env with your settings
+```
 
 ## Configuration
 
 Edit `.env` file to customize settings:
 
-env
-
-`# Download settings
+```env
+# Download settings
 DOWNLOAD_FOLDER=./downloads
 MAX_CONCURRENT_DOWNLOADS=3
 
 # Flask settings
 FLASK_HOST=0.0.0.0
 FLASK_PORT=5000
-FLASK_DEBUG=True`
+FLASK_DEBUG=True
+```
 
 ### Configuration Options
 
@@ -107,31 +110,35 @@ FLASK_DEBUG=True`
 
 **Windows:**
 
-bash
-
-`run.bat`
+```bash
+start.bat
+```
 
 **Linux/macOS:**
 
-bash
-
-`chmod +x run.sh
-./run.sh`
+```bash
+chmod +x start.sh
+./start.sh
+```
 
 ### Manual Start
 
-bash
+```bash
+# Activate virtual environment
+source .venv/bin/activate  # Linux/macOS
+.venv\Scripts\activate     # Windows
 
-`*# Activate virtual environment*
-source .venv/bin/activate  *# Linux/macOS*
-.venv\Scripts\activate     *# Windows# Run application*
-python app.py`
+# Run application
+python app.py
+```
 
 ### Access the Application
 
 Open your browser and navigate to:
 
-`http://localhost:5000`
+```
+http://localhost:5000
+```
 
 ### How to Use
 
@@ -167,11 +174,11 @@ Open your browser and navigate to:
 
 ### Project Dependencies
 
-txt
-
-`Flask==3.0.0
+```txt
+Flask==3.0.0
 yt-dlp==2023.11.16
-python-dotenv==1.0.0`
+python-dotenv==1.0.0
+```
 
 ### Adding New Features
 
