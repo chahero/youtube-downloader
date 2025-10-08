@@ -19,6 +19,7 @@ instance/
 # 환경변수
 .env
 
+
 # 다운로드 파일
 downloads/*
 !downloads/.gitkeep
