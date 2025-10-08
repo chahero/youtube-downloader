@@ -26,6 +26,18 @@
         let checkIntervals = {};
         let playlistIntervals = {};
 
+        function formatDuration(seconds) {
+            if (!seconds) return '';
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            
+            if (hours > 0) {
+                return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            }
+            return `${minutes}:${String(secs).padStart(2, '0')}`;
+        }
+
         async function startDownload() {
             const url = document.getElementById('url').value.trim();
             
@@ -34,7 +46,6 @@
                 return;
             }
             
-            // 로딩 표시
             const btn = document.querySelector('.input-section button');
             const originalText = btn.textContent;
             btn.disabled = true;
@@ -51,19 +62,15 @@
                 
                 if (response.ok) {
                     if (data.is_playlist) {
-                        // 플레이리스트 그룹 추가
-                        addPlaylistGroup(data.playlist_id, data.video_ids, data.count);
+                        addPlaylistGroup(data.playlist_id, data.video_ids, data.count, data.thumbnail);
                         
-                        // 각 비디오 항목 추가
                         data.video_ids.forEach(videoId => {
                             checkStatus(videoId);
                         });
                         
-                        // 플레이리스트 상태 체크 시작
                         checkPlaylistStatus(data.playlist_id);
                     } else {
-                        // 단일 비디오
-                        addDownloadItem(data.video_id, url);
+                        addDownloadItem(data.video_id, url, data.thumbnail);
                         checkStatus(data.video_id);
                     }
                     
@@ -79,15 +86,20 @@
             }
         }
         
-        function addPlaylistGroup(playlistId, videoIds, count) {
+        function addPlaylistGroup(playlistId, videoIds, count, thumbnail) {
             const downloadsDiv = document.getElementById('downloads');
             const group = document.createElement('div');
             group.className = 'playlist-group';
             group.id = 'playlist-' + playlistId;
+            
+            const thumbnailHtml = thumbnail 
+                ? `<img src="${thumbnail}" alt="Playlist thumbnail" class="playlist-thumbnail">`
+                : '<div class="playlist-thumbnail-placeholder">📋</div>';
+            
             group.innerHTML = `
                 <div class="playlist-header">
+                    ${thumbnailHtml}
                     <div class="playlist-info">
-                        <span class="playlist-icon">📋</span>
                         <span class="playlist-title" id="playlist-title-${playlistId}">Playlist (${count} videos)</span>
                         <span class="playlist-status" id="playlist-status-${playlistId}">Processing...</span>
                     </div>
@@ -103,13 +115,12 @@
             downloadsDiv.insertBefore(group, downloadsDiv.firstChild);
         }
         
-        function addDownloadItem(videoId, url, isPlaylist = false) {
-            let container;
-            
-            // 상태를 먼저 가져와서 플레이리스트 여부 확인
+        function addDownloadItem(videoId, url, thumbnail) {
             fetch(`/status/${videoId}`)
                 .then(res => res.json())
                 .then(data => {
+                    let container;
+                    
                     if (data.playlist_id) {
                         container = document.getElementById('playlist-content-' + data.playlist_id);
                     } else {
@@ -132,19 +143,35 @@
                         playlistBadge = `<span class="playlist-badge">${data.playlist_index}/${data.playlist_count}</span>`;
                     }
                     
+                    const thumbnailHtml = data.thumbnail || thumbnail
+                        ? `<img src="${data.thumbnail || thumbnail}" alt="Video thumbnail" class="video-thumbnail">`
+                        : '<div class="video-thumbnail-placeholder">🎬</div>';
+                    
+                    const durationHtml = data.duration 
+                        ? `<span class="duration">${formatDuration(data.duration)}</span>`
+                        : '';
+                    
                     item.innerHTML = `
-                        <div class="item-header">
-                            <div class="url">${playlistBadge}${displayUrl}</div>
-                            <div class="action-buttons">
-                                <button class="download-file-btn" id="download-file-${videoId}" onclick="downloadFile('${videoId}')" style="display: none;">⬇</button>
-                                <button class="cancel-btn" id="cancel-${videoId}" onclick="cancelDownload('${videoId}')">✕</button>
-                                <button class="delete-btn" id="delete-${videoId}" onclick="deleteDownload('${videoId}')" style="display: none;">🗑</button>
+                        <div class="item-content">
+                            <div class="thumbnail-container">
+                                ${thumbnailHtml}
+                                ${durationHtml}
                             </div>
-                        </div>
-                        <div class="status" id="status-${videoId}">Waiting...</div>
-                        <div class="progress-bar">
-                            <div class="progress" id="progress-${videoId}" style="width: 0%">
-                                <span class="progress-text" id="progress-text-${videoId}">0%</span>
+                            <div class="item-details">
+                                <div class="item-header">
+                                    <div class="url">${playlistBadge}${displayUrl}</div>
+                                    <div class="action-buttons">
+                                        <button class="download-file-btn" id="download-file-${videoId}" onclick="downloadFile('${videoId}')" style="display: none;">⬇</button>
+                                        <button class="cancel-btn" id="cancel-${videoId}" onclick="cancelDownload('${videoId}')">✕</button>
+                                        <button class="delete-btn" id="delete-${videoId}" onclick="deleteDownload('${videoId}')" style="display: none;">🗑</button>
+                                    </div>
+                                </div>
+                                <div class="status" id="status-${videoId}">Waiting...</div>
+                                <div class="progress-bar">
+                                    <div class="progress" id="progress-${videoId}" style="width: 0%">
+                                        <span class="progress-text" id="progress-text-${videoId}">0%</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -225,7 +252,6 @@
                         statusElem.textContent = `✓${s.completed} ⏳${s.downloading} ⏸${s.queued} ✕${s.cancelled} ✗${s.error}`;
                     }
                     
-                    // 모든 다운로드가 완료/취소/에러 상태면 버튼 변경
                     const activeCount = data.statuses.downloading + data.statuses.queued;
                     if (activeCount === 0) {
                         if (cancelBtn) cancelBtn.style.display = 'none';
@@ -278,26 +304,24 @@
         }
         
         async function checkStatus(videoId) {
-            // 첫 호출에서 항목 추가
             const response = await fetch(`/status/${videoId}`);
             const initialData = await response.json();
             
             if (initialData.playlist_id) {
-                // 플레이리스트의 일부인 경우, 컨테이너가 준비될 때까지 대기
                 let attempts = 0;
                 const waitForContainer = setInterval(() => {
                     const container = document.getElementById('playlist-content-' + initialData.playlist_id);
                     if (container || attempts > 10) {
                         clearInterval(waitForContainer);
                         if (!document.getElementById('item-' + videoId)) {
-                            addDownloadItem(videoId, initialData.url, true);
+                            addDownloadItem(videoId, initialData.url, initialData.thumbnail);
                         }
                     }
                     attempts++;
                 }, 100);
             } else {
                 if (!document.getElementById('item-' + videoId)) {
-                    addDownloadItem(videoId, initialData.url, false);
+                    addDownloadItem(videoId, initialData.url, initialData.thumbnail);
                 }
             }
             
@@ -334,7 +358,7 @@
                         deleteBtn.style.display = 'none';
                         downloadFileBtn.style.display = 'none';
                     } else if (data.status === 'completed') {
-                        statusDiv.textContent = `✓ Completed: ${data.filename}`;
+                        statusDiv.textContent = `✓ Completed`;
                         progressDiv.style.width = '100%';
                         progressText.textContent = '100%';
                         itemDiv.className = 'download-item completed';

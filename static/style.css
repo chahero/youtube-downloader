@@ -108,39 +108,52 @@ button:disabled {
 
 .playlist-header {
     background: #161b22;
-    padding: 15px 18px;
+    padding: 15px;
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 15px;
     border-bottom: 1px solid #30363d;
 }
 
-.playlist-info {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex: 1;
+.playlist-thumbnail,
+.playlist-thumbnail-placeholder {
+    width: 80px;
+    height: 60px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
 }
 
-.playlist-icon {
-    font-size: 20px;
+.playlist-thumbnail-placeholder {
+    background: #21262d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+}
+
+.playlist-info {
+    flex: 1;
+    min-width: 0;
 }
 
 .playlist-title {
     font-weight: bold;
     color: #c9d1d9;
     font-size: 15px;
+    display: block;
+    margin-bottom: 5px;
 }
 
 .playlist-status {
     font-size: 13px;
     color: #8b949e;
-    margin-left: 10px;
 }
 
 .playlist-actions {
     display: flex;
     gap: 8px;
+    flex-shrink: 0;
 }
 
 .cancel-playlist-btn,
@@ -200,7 +213,7 @@ button:disabled {
 /* 다운로드 항목 */
 .download-item {
     background: #0d1117;
-    padding: 18px;
+    padding: 15px;
     border-radius: 8px;
     margin-bottom: 15px;
     border-left: 4px solid #30363d;
@@ -230,6 +243,49 @@ button:disabled {
     border-left-color: #f85149;
 }
 
+.item-content {
+    display: flex;
+    gap: 12px;
+}
+
+.thumbnail-container {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.video-thumbnail,
+.video-thumbnail-placeholder {
+    width: 120px;
+    height: 90px;
+    border-radius: 6px;
+    object-fit: cover;
+}
+
+.video-thumbnail-placeholder {
+    background: #21262d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+}
+
+.duration {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.item-details {
+    flex: 1;
+    min-width: 0;
+}
+
 .item-header {
     display: flex;
     justify-content: space-between;
@@ -239,22 +295,23 @@ button:disabled {
 }
 
 .url {
-    font-size: 12px;
-    color: #8b949e;
-    word-break: break-all;
+    font-size: 13px;
+    color: #c9d1d9;
+    word-break: break-word;
     flex: 1;
+    line-height: 1.4;
 }
 
 .action-buttons {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     flex-shrink: 0;
 }
 
 .cancel-btn, .delete-btn, .download-file-btn {
     width: auto;
     padding: 4px 10px;
-    font-size: 16px;
+    font-size: 14px;
     min-width: 32px;
     margin: 0;
 }
@@ -286,13 +343,13 @@ button:disabled {
 .status {
     font-weight: 500;
     margin-bottom: 10px;
-    font-size: 14px;
-    color: #c9d1d9;
+    font-size: 13px;
+    color: #8b949e;
 }
 
 .progress-bar {
     width: 100%;
-    height: 28px;
+    height: 24px;
     background: #21262d;
     border-radius: 6px;
     overflow: hidden;
@@ -310,7 +367,7 @@ button:disabled {
 }
 
 .progress-text {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: bold;
     color: white;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
@@ -322,4 +379,27 @@ button:disabled {
 
 .download-item.queued .progress {
     background: linear-gradient(90deg, #a371f7 0%, #8957e5 100%);
+}
+
+/* 반응형 */
+@media (max-width: 768px) {
+    .item-content {
+        flex-direction: column;
+    }
+    
+    .video-thumbnail,
+    .video-thumbnail-placeholder {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 16/9;
+    }
+    
+    .playlist-header {
+        flex-wrap: wrap;
+    }
+    
+    .playlist-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
 }

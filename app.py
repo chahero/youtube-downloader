@@ -23,7 +23,7 @@ cancel_events = {}
 download_queue = Queue()
 active_downloads = 0
 lock = threading.Lock()
-playlist_groups = {}  # 플레이리스트 그룹 정보 저장
+playlist_groups = {}
 
 def download_worker():
     global active_downloads
@@ -76,32 +76,26 @@ def download_video(video_id, url):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
         
-        download_status[video_id] = {
+        download_status[video_id].update({
             'status': 'completed',
             'message': 'Download completed',
             'filename': os.path.basename(filename),
-            'progress': 100,
-            'playlist_id': download_status[video_id].get('playlist_id'),
-            'video_title': download_status[video_id].get('video_title')
-        }
+            'progress': 100
+        })
         
     except Exception as e:
         if cancel_events[video_id].is_set():
-            download_status[video_id] = {
+            download_status[video_id].update({
                 'status': 'cancelled',
                 'message': 'Cancelled',
-                'progress': 0,
-                'playlist_id': download_status[video_id].get('playlist_id'),
-                'video_title': download_status[video_id].get('video_title')
-            }
+                'progress': 0
+            })
         else:
-            download_status[video_id] = {
+            download_status[video_id].update({
                 'status': 'error',
                 'message': str(e),
-                'progress': 0,
-                'playlist_id': download_status[video_id].get('playlist_id'),
-                'video_title': download_status[video_id].get('video_title')
-            }
+                'progress': 0
+            })
 
 for _ in range(MAX_CONCURRENT_DOWNLOADS):
     worker = threading.Thread(target=download_worker, daemon=True)
@@ -128,23 +122,49 @@ def extract_playlist_info(url):
                 videos = []
                 for entry in info['entries']:
                     if entry:
+                        # 썸네일 URL 가져오기
+                        thumbnail = None
+                        if 'thumbnails' in entry and entry['thumbnails']:
+                            # 가장 좋은 품질의 썸네일 선택
+                            thumbnail = entry['thumbnails'][-1]['url']
+                        elif 'thumbnail' in entry:
+                            thumbnail = entry['thumbnail']
+                        
                         videos.append({
                             'url': f"https://www.youtube.com/watch?v={entry['id']}",
-                            'title': entry.get('title', 'Unknown')
+                            'title': entry.get('title', 'Unknown'),
+                            'thumbnail': thumbnail,
+                            'duration': entry.get('duration', 0)
                         })
+                
+                # 플레이리스트 썸네일
+                playlist_thumbnail = None
+                if 'thumbnails' in info and info['thumbnails']:
+                    playlist_thumbnail = info['thumbnails'][-1]['url']
+                elif videos and videos[0]['thumbnail']:
+                    playlist_thumbnail = videos[0]['thumbnail']
                 
                 return {
                     'is_playlist': True,
                     'title': info.get('title', 'Unknown Playlist'),
                     'videos': videos,
-                    'count': len(videos)
+                    'count': len(videos),
+                    'thumbnail': playlist_thumbnail
                 }
             else:
-                # 단일 비디오
+                # 단일 비디오 - 상세 정보 가져오기
+                thumbnail = None
+                if 'thumbnails' in info and info['thumbnails']:
+                    thumbnail = info['thumbnails'][-1]['url']
+                elif 'thumbnail' in info:
+                    thumbnail = info['thumbnail']
+                
                 return {
                     'is_playlist': False,
                     'title': info.get('title', 'Unknown'),
-                    'url': url
+                    'url': url,
+                    'thumbnail': thumbnail,
+                    'duration': info.get('duration', 0)
                 }
     except Exception as e:
         raise Exception(f"Failed to extract info: {str(e)}")
@@ -167,7 +187,8 @@ def start_download():
             playlist_groups[playlist_id] = {
                 'title': info['title'],
                 'count': info['count'],
-                'video_ids': []
+                'video_ids': [],
+                'thumbnail': info.get('thumbnail')
             }
             
             video_ids = []
@@ -189,6 +210,8 @@ def start_download():
                         'progress': 0,
                         'url': video['url'],
                         'video_title': video['title'],
+                        'thumbnail': video.get('thumbnail'),
+                        'duration': video.get('duration', 0),
                         'playlist_id': playlist_id,
                         'playlist_title': info['title'],
                         'playlist_index': idx + 1,
@@ -201,6 +224,8 @@ def start_download():
                         'progress': 0,
                         'url': video['url'],
                         'video_title': video['title'],
+                        'thumbnail': video.get('thumbnail'),
+                        'duration': video.get('duration', 0),
                         'playlist_id': playlist_id,
                         'playlist_title': info['title'],
                         'playlist_index': idx + 1,
@@ -214,7 +239,8 @@ def start_download():
                 'is_playlist': True,
                 'playlist_id': playlist_id,
                 'video_ids': video_ids,
-                'count': info['count']
+                'count': info['count'],
+                'thumbnail': info.get('thumbnail')
             })
         else:
             # 단일 비디오 처리
@@ -231,7 +257,9 @@ def start_download():
                     'message': f'Queued (#{queue_position - MAX_CONCURRENT_DOWNLOADS + 1})',
                     'progress': 0,
                     'url': url,
-                    'video_title': info['title']
+                    'video_title': info['title'],
+                    'thumbnail': info.get('thumbnail'),
+                    'duration': info.get('duration', 0)
                 }
             else:
                 download_status[video_id] = {
@@ -239,7 +267,9 @@ def start_download():
                     'message': 'Starting soon...',
                     'progress': 0,
                     'url': url,
-                    'video_title': info['title']
+                    'video_title': info['title'],
+                    'thumbnail': info.get('thumbnail'),
+                    'duration': info.get('duration', 0)
                 }
             
             download_queue.put((video_id, url))
@@ -247,7 +277,8 @@ def start_download():
             return jsonify({
                 'message': 'Download started',
                 'is_playlist': False,
-                'video_id': video_id
+                'video_id': video_id,
+                'thumbnail': info.get('thumbnail')
             })
             
     except Exception as e:
@@ -284,7 +315,8 @@ def get_playlist_status(playlist_id):
     return jsonify({
         'title': playlist['title'],
         'total': playlist['count'],
-        'statuses': statuses
+        'statuses': statuses,
+        'thumbnail': playlist.get('thumbnail')
     })
 
 @app.route('/cancel/<video_id>', methods=['POST'])
