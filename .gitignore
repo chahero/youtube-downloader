@@ -18,7 +18,7 @@ instance/
 
 # 환경변수
 .env
-
+settings.local.json
 
 # 다운로드 파일
 downloads/*
