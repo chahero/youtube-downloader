@@ -38,6 +38,10 @@ desktop.ini
 
 # 로그
 *.log
+logs/
+
+# 프로세스
+app.pid
 
 # 배포
 *.egg-info/
