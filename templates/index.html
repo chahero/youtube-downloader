@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>유튜브 다운로더</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 유튜브 다운로더</h1>
+        
+        <div class="input-section">
+            <input type="text" id="url" placeholder="유튜브 URL을 입력하세요">
+            <button onclick="startDownload()">다운로드 시작</button>
+        </div>
+        
+        <div class="info">
+            동시 다운로드: <span id="activeCount">0</span> / 3
+        </div>
+        
+        <div id="downloads"></div>
+    </div>
+
+    <script>
+        let checkIntervals = {};
+
+        async function startDownload() {
+            const url = document.getElementById('url').value.trim();
+            
+            if (!url) {
+                alert('URL을 입력해주세요');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ url: url })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    addDownloadItem(data.video_id, url);
+                    checkStatus(data.video_id);
+                    document.getElementById('url').value = '';
+                } else {
+                    alert('오류: ' + data.error);
+                }
+            } catch (error) {
+                alert('오류: ' + error.message);
+            }
+        }
+        
+        function addDownloadItem(videoId, url) {
+            const downloadsDiv = document.getElementById('downloads');
+            const item = document.createElement('div');
+            item.className = 'download-item';
+            item.id = 'item-' + videoId;
+            item.innerHTML = `
+                <div class="item-header">
+                    <div class="url">${url}</div>
+                    <button class="cancel-btn" onclick="cancelDownload('${videoId}')">✕</button>
+                </div>
+                <div class="status" id="status-${videoId}">대기 중...</div>
+                <div class="progress-bar">
+                    <div class="progress" id="progress-${videoId}" style="width: 0%">
+                        <span class="progress-text" id="progress-text-${videoId}">0%</span>
+                    </div>
+                </div>
+            `;
+            downloadsDiv.insertBefore(item, downloadsDiv.firstChild);
+        }
+        
+        async function cancelDownload(videoId) {
+            if (!confirm('다운로드를 취소하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                await fetch(`/cancel/${videoId}`, { method: 'POST' });
+                clearInterval(checkIntervals[videoId]);
+            } catch (error) {
+                console.error('취소 오류:', error);
+            }
+        }
+        
+        async function checkStatus(videoId) {
+            checkIntervals[videoId] = setInterval(async () => {
+                try {
+                    const response = await fetch(`/status/${videoId}`);
+                    const data = await response.json();
+                    
+                    const statusDiv = document.getElementById('status-' + videoId);
+                    const progressDiv = document.getElementById('progress-' + videoId);
+                    const progressText = document.getElementById('progress-text-' + videoId);
+                    const itemDiv = document.getElementById('item-' + videoId);
+                    const cancelBtn = itemDiv.querySelector('.cancel-btn');
+                    
+                    if (data.status === 'queued') {
+                        statusDiv.textContent = data.message;
+                        itemDiv.className = 'download-item queued';
+                        progressDiv.style.width = '0%';
+                        progressText.textContent = '대기';
+                    } else if (data.status === 'downloading') {
+                        statusDiv.textContent = '다운로드 중...';
+                        const progress = data.progress || 0;
+                        progressDiv.style.width = progress + '%';
+                        progressText.textContent = progress + '%';
+                        itemDiv.className = 'download-item downloading';
+                    } else if (data.status === 'completed') {
+                        statusDiv.textContent = `✓ 완료: ${data.filename}`;
+                        progressDiv.style.width = '100%';
+                        progressText.textContent = '100%';
+                        itemDiv.className = 'download-item completed';
+                        cancelBtn.style.display = 'none';
+                        clearInterval(checkIntervals[videoId]);
+                    } else if (data.status === 'cancelled') {
+                        statusDiv.textContent = '✕ 취소됨';
+                        itemDiv.className = 'download-item cancelled';
+                        cancelBtn.style.display = 'none';
+                        clearInterval(checkIntervals[videoId]);
+                    } else if (data.status === 'error') {
+                        statusDiv.textContent = `✗ 오류: ${data.message}`;
+                        itemDiv.className = 'download-item error';
+                        cancelBtn.style.display = 'none';
+                        clearInterval(checkIntervals[videoId]);
+                    }
+                    
+                    updateActiveCount();
+                } catch (error) {
+                    console.error('상태 확인 오류:', error);
+                }
+            }, 500);
+        }
+        
+        function updateActiveCount() {
+            const downloadingItems = document.querySelectorAll('.download-item.downloading').length;
+            document.getElementById('activeCount').textContent = downloadingItems;
+        }
+        
+        // Enter 키로 다운로드 시작
+        document.getElementById('url').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                startDownload();
+            }
+        });
+    </script>
+</body>
+</html>

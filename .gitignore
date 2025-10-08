@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 가상환경
+.venv/
+venv/
+env/
+ENV/
+
+# Flask
+instance/
+.env
+*.db
+*.sqlite
+
+# 다운로드 파일
+downloads/*
+!downloads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 로그
+*.log
+
+# 배포
+*.egg-info/
+dist/
+build/
+
+# 기타
+/output
+/downloads
