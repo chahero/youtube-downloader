@@ -144,12 +144,20 @@ button:active {
     flex-shrink: 0;
 }
 
-.cancel-btn, .delete-btn {
+.cancel-btn, .delete-btn, .download-file-btn {
     width: auto;
     padding: 4px 10px;
     font-size: 16px;
     min-width: 32px;
     margin: 0;
+}
+
+.download-file-btn {
+    background: #58a6ff;
+}
+
+.download-file-btn:hover {
+    background: #1f6feb;
 }
 
 .cancel-btn {
@@ -207,12 +215,4 @@ button:active {
 
 .download-item.queued .progress {
     background: linear-gradient(90deg, #a371f7 0%, #8957e5 100%);
-}
-
-.download-file-btn {
-    background: #58a6ff;
-}
-
-.download-file-btn:hover {
-    background: #1f6feb;
 }

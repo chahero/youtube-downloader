@@ -1,22 +1,22 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>유튜브 다운로더</title>
+    <title>YouTube Downloader</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>🎥 유튜브 다운로더</h1>
+        <h1>🎥 YouTube Downloader</h1>
         
         <div class="input-section">
-            <input type="text" id="url" placeholder="유튜브 URL을 입력하세요">
-            <button onclick="startDownload()">다운로드 시작</button>
+            <input type="text" id="url" placeholder="Enter YouTube URL">
+            <button onclick="startDownload()">Start Download</button>
         </div>
         
         <div class="info">
-            동시 다운로드: <span id="activeCount">0</span> / {{ max_downloads }}
+            Concurrent Downloads: <span id="activeCount">0</span> / {{ max_downloads }}
         </div>
         
         <div id="downloads"></div>
@@ -29,7 +29,7 @@
             const url = document.getElementById('url').value.trim();
             
             if (!url) {
-                alert('URL을 입력해주세요');
+                alert('Please enter a URL');
                 return;
             }
             
@@ -47,10 +47,10 @@
                     checkStatus(data.video_id);
                     document.getElementById('url').value = '';
                 } else {
-                    alert('오류: ' + data.error);
+                    alert('Error: ' + data.error);
                 }
             } catch (error) {
-                alert('오류: ' + error.message);
+                alert('Error: ' + error.message);
             }
         }
         
@@ -68,7 +68,7 @@
                         <button class="delete-btn" id="delete-${videoId}" onclick="deleteDownload('${videoId}')" style="display: none;">🗑</button>
                     </div>
                 </div>
-                <div class="status" id="status-${videoId}">대기 중...</div>
+                <div class="status" id="status-${videoId}">Waiting...</div>
                 <div class="progress-bar">
                     <div class="progress" id="progress-${videoId}" style="width: 0%">
                         <span class="progress-text" id="progress-text-${videoId}">0%</span>
@@ -79,14 +79,14 @@
         }
         
         async function cancelDownload(videoId) {
-            if (!confirm('다운로드를 취소하시겠습니까?')) {
+            if (!confirm('Cancel this download?')) {
                 return;
             }
             
             try {
                 await fetch(`/cancel/${videoId}`, { method: 'POST' });
             } catch (error) {
-                console.error('취소 오류:', error);
+                console.error('Cancel error:', error);
             }
         }
         
@@ -96,7 +96,6 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // 항목 제거 애니메이션
                     const item = document.getElementById('item-' + videoId);
                     item.style.opacity = '0';
                     item.style.transform = 'translateX(100%)';
@@ -107,17 +106,17 @@
                         delete checkIntervals[videoId];
                     }, 300);
                 } else {
-                    alert('오류: ' + data.error);
+                    alert('Error: ' + data.error);
                 }
             } catch (error) {
-                alert('삭제 오류: ' + error.message);
+                alert('Delete error: ' + error.message);
             }
         }
-
+        
         function downloadFile(videoId) {
             window.location.href = `/download-file/${videoId}`;
         }
-                
+        
         async function checkStatus(videoId) {
             checkIntervals[videoId] = setInterval(async () => {
                 try {
@@ -130,49 +129,53 @@
                     const itemDiv = document.getElementById('item-' + videoId);
                     const cancelBtn = document.getElementById('cancel-' + videoId);
                     const deleteBtn = document.getElementById('delete-' + videoId);
-                    const downloadFileBtn = document.getElementById('download-file-' + videoId)
+                    const downloadFileBtn = document.getElementById('download-file-' + videoId);
                     
                     if (data.status === 'queued') {
                         statusDiv.textContent = data.message;
                         itemDiv.className = 'download-item queued';
                         progressDiv.style.width = '0%';
-                        progressText.textContent = '대기';
+                        progressText.textContent = 'Queued';
                         cancelBtn.style.display = 'inline-block';
                         deleteBtn.style.display = 'none';
+                        downloadFileBtn.style.display = 'none';
                     } else if (data.status === 'downloading') {
-                        statusDiv.textContent = '다운로드 중...';
+                        statusDiv.textContent = 'Downloading...';
                         const progress = data.progress || 0;
                         progressDiv.style.width = progress + '%';
                         progressText.textContent = progress + '%';
                         itemDiv.className = 'download-item downloading';
                         cancelBtn.style.display = 'inline-block';
                         deleteBtn.style.display = 'none';
+                        downloadFileBtn.style.display = 'none';
                     } else if (data.status === 'completed') {
-                        statusDiv.textContent = `✓ 완료: ${data.filename}`;
+                        statusDiv.textContent = `✓ Completed: ${data.filename}`;
                         progressDiv.style.width = '100%';
                         progressText.textContent = '100%';
                         itemDiv.className = 'download-item completed';
                         cancelBtn.style.display = 'none';
                         deleteBtn.style.display = 'inline-block';
-                        downloadFileBtn.style.display = 'inline-block';  // 이 줄 추가
+                        downloadFileBtn.style.display = 'inline-block';
                         clearInterval(checkIntervals[videoId]);
                     } else if (data.status === 'cancelled') {
-                        statusDiv.textContent = '✕ 취소됨';
+                        statusDiv.textContent = '✕ Cancelled';
                         itemDiv.className = 'download-item cancelled';
                         cancelBtn.style.display = 'none';
                         deleteBtn.style.display = 'inline-block';
+                        downloadFileBtn.style.display = 'none';
                         clearInterval(checkIntervals[videoId]);
                     } else if (data.status === 'error') {
-                        statusDiv.textContent = `✗ 오류: ${data.message}`;
+                        statusDiv.textContent = `✗ Error: ${data.message}`;
                         itemDiv.className = 'download-item error';
                         cancelBtn.style.display = 'none';
                         deleteBtn.style.display = 'inline-block';
+                        downloadFileBtn.style.display = 'none';
                         clearInterval(checkIntervals[videoId]);
                     }
                     
                     updateActiveCount();
                 } catch (error) {
-                    console.error('상태 확인 오류:', error);
+                    console.error('Status check error:', error);
                 }
             }, 500);
         }
@@ -182,7 +185,6 @@
             document.getElementById('activeCount').textContent = downloadingItems;
         }
         
-        // Enter 키로 다운로드 시작
         document.getElementById('url').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 startDownload();
