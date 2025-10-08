@@ -48,8 +48,11 @@
         </div>
         
         <div class="info">
-            Concurrent Downloads: <span id="activeCount">0</span> / {{ max_downloads }}
-            <button class="clear-inactive-btn" onclick="clearInactive()">🗑️ Clear Inactive</button>
+            <span>Concurrent Downloads: <span id="activeCount">0</span> / {{ max_downloads }}</span>
+            <div class="info-buttons">
+                <button class="clear-inactive-btn" onclick="clearInactive()">🗑️ Clear Inactive</button>
+                <button class="clean-storage-btn" onclick="cleanStorage()">🗑️ Clean Storage</button>
+            </div>
         </div>
         
         <div id="downloads"></div>
@@ -508,6 +511,29 @@
                 }
             } catch (error) {
                 alert('Delete error: ' + error.message);
+            }
+        }
+
+        async function cleanStorage() {
+            if (!confirm('⚠️ WARNING: This will delete all downloaded files (except active downloads).\n\nAre you sure?')) {
+                return;
+            }
+            
+            if (!confirm('⚠️ FINAL WARNING: Deleted files CANNOT be recovered!\n\nContinue?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/clean-storage', { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ Storage cleaned!\n${data.deleted_count} file(s) deleted.`);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
             }
         }
         

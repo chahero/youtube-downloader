@@ -170,6 +170,11 @@ button:disabled {
     align-items: center;
 }
 
+.info-buttons {
+    display: flex;
+    gap: 10px;
+}
+
 .info span {
     color: #58a6ff;
     font-weight: bold;
@@ -481,16 +486,28 @@ button:disabled {
     background: linear-gradient(90deg, #a371f7 0%, #8957e5 100%);
 }
 
-.clear-inactive-btn {
+.clear-inactive-btn,
+.clean-storage-btn {
     width: auto;
     padding: 8px 16px;
     font-size: 13px;
-    background: #6e7681;
     margin: 0;
+}
+
+.clear-inactive-btn {
+    background: #6e7681;
 }
 
 .clear-inactive-btn:hover {
     background: #8b949e;
+}
+
+.clean-storage-btn {
+    background: #da3633;
+}
+
+.clean-storage-btn:hover {
+    background: #f85149;
 }
 
 /* 반응형 */

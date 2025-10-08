@@ -488,6 +488,36 @@ def clear_inactive():
         'deleted_videos': len(deleted_videos),
         'deleted_playlists': len(deleted_playlists)
     })
+    
+@app.route('/clean-storage', methods=['POST'])
+def clean_storage():
+    try:
+        # 진행 중인 다운로드의 파일명 수집
+        active_files = set()
+        for video_id, status in download_status.items():
+            if status.get('status') in ['downloading', 'queued']:
+                filename = status.get('filename')
+                if filename:
+                    active_files.add(filename)
+        
+        # 파일 삭제
+        deleted_count = 0
+        if os.path.exists(DOWNLOAD_FOLDER):
+            for filename in os.listdir(DOWNLOAD_FOLDER):
+                if filename not in active_files:
+                    filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+                    try:
+                        os.remove(filepath)
+                        deleted_count += 1
+                    except Exception as e:
+                        print(f"Failed to delete {filename}: {e}")
+        
+        return jsonify({
+            'message': 'Storage cleaned',
+            'deleted_count': deleted_count
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)
