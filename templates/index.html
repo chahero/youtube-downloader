@@ -35,6 +35,13 @@
                         <option value="audio_m4a">Audio Only (M4A)</option>
                     </select>
                 </div>
+                
+                <div class="option-group">
+                    <label for="notifications">
+                        <input type="checkbox" id="notifications" checked> 
+                        <span class="checkbox-label">Notifications</span>
+                    </label>
+                </div>
             </div>
             
             <button onclick="startDownload()">Start Download</button>
@@ -50,6 +57,57 @@
     <script>
         let checkIntervals = {};
         let playlistIntervals = {};
+        let notificationsEnabled = true;
+
+        // 알림 권한 요청
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        // 알림 체크박스 변경 시
+        document.getElementById('notifications').addEventListener('change', function() {
+            notificationsEnabled = this.checked;
+            
+            if (this.checked && Notification.permission === 'default') {
+                Notification.requestPermission().then(permission => {
+                    if (permission !== 'granted') {
+                        this.checked = false;
+                        notificationsEnabled = false;
+                        alert('Please allow notifications in your browser settings');
+                    }
+                });
+            }
+        });
+
+        function showNotification(title, body, icon = '🎥') {
+            if (!notificationsEnabled || !('Notification' in window)) {
+                return;
+            }
+
+            if (Notification.permission === 'granted') {
+                const notification = new Notification(title, {
+                    body: body,
+                    icon: icon,
+                    badge: icon,
+                    tag: 'youtube-downloader',
+                    requireInteraction: false
+                });
+
+                notification.onclick = function() {
+                    window.focus();
+                    notification.close();
+                };
+
+                // 5초 후 자동 닫기
+                setTimeout(() => notification.close(), 5000);
+            } else if (Notification.permission !== 'denied') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        showNotification(title, body, icon);
+                    }
+                });
+            }
+        }
 
         // 포맷 선택 시 화질 옵션 비활성화/활성화
         document.getElementById('format').addEventListener('change', function() {
@@ -128,9 +186,23 @@
                         });
                         
                         checkPlaylistStatus(data.playlist_id);
+                        
+                        // 플레이리스트 시작 알림
+                        showNotification(
+                            '📋 Playlist Download Started',
+                            `${data.count} videos added to queue`,
+                            '📋'
+                        );
                     } else {
                         addDownloadItem(data.video_id, url, data.thumbnail);
                         checkStatus(data.video_id);
+                        
+                        // 단일 비디오 시작 알림
+                        showNotification(
+                            '🎥 Download Started',
+                            'Video added to download queue',
+                            '🎥'
+                        );
                     }
                     
                     document.getElementById('url').value = '';
@@ -295,6 +367,8 @@
         }
         
         async function checkPlaylistStatus(playlistId) {
+            let wasAllActive = true;
+            
             playlistIntervals[playlistId] = setInterval(async () => {
                 try {
                     const response = await fetch(`/playlist-status/${playlistId}`);
@@ -320,6 +394,18 @@
                     }
                     
                     const activeCount = data.statuses.downloading + data.statuses.queued;
+                    
+                    // 모든 다운로드가 완료되었을 때 알림
+                    if (wasAllActive && activeCount === 0 && data.statuses.completed > 0) {
+                        showNotification(
+                            '📋 Playlist Complete',
+                            `${data.statuses.completed} video(s) downloaded successfully`,
+                            '✅'
+                        );
+                    }
+                    
+                    wasAllActive = activeCount > 0;
+                    
                     if (activeCount === 0) {
                         if (cancelBtn) cancelBtn.style.display = 'none';
                         if (deleteBtn) deleteBtn.style.display = 'inline-block';
@@ -392,6 +478,8 @@
                 }
             }
             
+            let lastStatus = null;
+            
             checkIntervals[videoId] = setInterval(async () => {
                 try {
                     const response = await fetch(`/status/${videoId}`);
@@ -432,6 +520,16 @@
                         cancelBtn.style.display = 'none';
                         deleteBtn.style.display = 'inline-block';
                         downloadFileBtn.style.display = 'inline-block';
+                        
+                        // 완료 알림 (단일 비디오만, 플레이리스트는 전체 완료 시 알림)
+                        if (lastStatus !== 'completed' && !data.playlist_id) {
+                            showNotification(
+                                '✅ Download Complete',
+                                data.video_title || 'Your video is ready',
+                                '✅'
+                            );
+                        }
+                        
                         clearInterval(checkIntervals[videoId]);
                     } else if (data.status === 'cancelled') {
                         statusDiv.textContent = '✕ Cancelled';
@@ -446,9 +544,20 @@
                         cancelBtn.style.display = 'none';
                         deleteBtn.style.display = 'inline-block';
                         downloadFileBtn.style.display = 'none';
+                        
+                        // 에러 알림
+                        if (lastStatus !== 'error') {
+                            showNotification(
+                                '❌ Download Failed',
+                                data.video_title || 'Download encountered an error',
+                                '❌'
+                            );
+                        }
+                        
                         clearInterval(checkIntervals[videoId]);
                     }
                     
+                    lastStatus = data.status;
                     updateActiveCount();
                 } catch (error) {
                     console.error('Status check error:', error);

@@ -72,6 +72,38 @@ input[type="text"]::placeholder {
     font-weight: 500;
 }
 
+/* 체크박스용 특별 스타일 */
+.option-group label:has(input[type="checkbox"]) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 0;
+    padding: 12px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.option-group label:has(input[type="checkbox"]):hover {
+    border-color: #58a6ff;
+    background: #161b22;
+}
+
+input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #58a6ff;
+}
+
+.checkbox-label {
+    color: #c9d1d9;
+    font-size: 14px;
+    user-select: none;
+}
+
 select {
     width: 100%;
     padding: 12px;
