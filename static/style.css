@@ -208,3 +208,11 @@ button:active {
 .download-item.queued .progress {
     background: linear-gradient(90deg, #a371f7 0%, #8957e5 100%);
 }
+
+.download-file-btn {
+    background: #58a6ff;
+}
+
+.download-file-btn:hover {
+    background: #1f6feb;
+}

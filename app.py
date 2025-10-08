@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 import yt_dlp
 import os
 import threading
@@ -182,6 +182,28 @@ def delete_download(video_id):
         return jsonify({'message': '삭제 완료'})
     
     return jsonify({'error': '찾을 수 없음'}), 404
+
+@app.route('/download-file/<video_id>')
+def download_file(video_id):
+    """완료된 파일을 다운로드"""
+    if video_id not in download_status:
+        return jsonify({'error': '찾을 수 없음'}), 404
+    
+    status = download_status[video_id]
+    
+    if status.get('status') != 'completed':
+        return jsonify({'error': '다운로드가 완료되지 않았습니다'}), 400
+    
+    filename = status.get('filename')
+    if not filename:
+        return jsonify({'error': '파일을 찾을 수 없습니다'}), 404
+    
+    filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+    
+    if not os.path.exists(filepath):
+        return jsonify({'error': '파일이 존재하지 않습니다'}), 404
+    
+    return send_file(filepath, as_attachment=True, download_name=filename)
 
 if __name__ == '__main__':
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)

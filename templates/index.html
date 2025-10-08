@@ -63,6 +63,7 @@
                 <div class="item-header">
                     <div class="url">${url}</div>
                     <div class="action-buttons">
+                        <button class="download-file-btn" id="download-file-${videoId}" onclick="downloadFile('${videoId}')" style="display: none;">⬇</button>
                         <button class="cancel-btn" id="cancel-${videoId}" onclick="cancelDownload('${videoId}')">✕</button>
                         <button class="delete-btn" id="delete-${videoId}" onclick="deleteDownload('${videoId}')" style="display: none;">🗑</button>
                     </div>
@@ -112,7 +113,11 @@
                 alert('삭제 오류: ' + error.message);
             }
         }
-        
+
+        function downloadFile(videoId) {
+            window.location.href = `/download-file/${videoId}`;
+        }
+                
         async function checkStatus(videoId) {
             checkIntervals[videoId] = setInterval(async () => {
                 try {
@@ -125,6 +130,7 @@
                     const itemDiv = document.getElementById('item-' + videoId);
                     const cancelBtn = document.getElementById('cancel-' + videoId);
                     const deleteBtn = document.getElementById('delete-' + videoId);
+                    const downloadFileBtn = document.getElementById('download-file-' + videoId)
                     
                     if (data.status === 'queued') {
                         statusDiv.textContent = data.message;
@@ -148,6 +154,7 @@
                         itemDiv.className = 'download-item completed';
                         cancelBtn.style.display = 'none';
                         deleteBtn.style.display = 'inline-block';
+                        downloadFileBtn.style.display = 'inline-block';  // 이 줄 추가
                         clearInterval(checkIntervals[videoId]);
                     } else if (data.status === 'cancelled') {
                         statusDiv.textContent = '✕ 취소됨';
