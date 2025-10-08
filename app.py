@@ -82,12 +82,16 @@ def download_video(video_id, url, quality='best', format_type='video'):
                 try:
                     total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
                     downloaded = d.get('downloaded_bytes', 0)
+                    speed = d.get('speed', 0) # 속도 정보
                     
                     if total > 0:
                         percent = int((downloaded / total) * 100)
                         download_status[video_id]['progress'] = percent
                     else:
                         download_status[video_id]['progress'] = 0
+                        
+                    # 속도 저장
+                    download_status[video_id]['speed'] = speed if speed else 0
                 except:
                     pass
         
@@ -119,7 +123,8 @@ def download_video(video_id, url, quality='best', format_type='video'):
             'status': 'completed',
             'message': 'Download completed',
             'filename': os.path.basename(filename),
-            'progress': 100
+            'progress': 100, 
+            'speed': 0
         })
         
     except Exception as e:
@@ -127,7 +132,8 @@ def download_video(video_id, url, quality='best', format_type='video'):
             download_status[video_id].update({
                 'status': 'cancelled',
                 'message': 'Cancelled',
-                'progress': 0
+                'progress': 0, 
+                'speed': 0
             })
         else:
             download_status[video_id].update({

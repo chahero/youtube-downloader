@@ -540,6 +540,21 @@
         function downloadFile(videoId) {
             window.location.href = `/download-file/${videoId}`;
         }
+
+        function formatSpeed(bytesPerSecond) {
+            if (!bytesPerSecond || bytesPerSecond === 0) return '';
+            
+            const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+            let size = bytesPerSecond;
+            let unitIndex = 0;
+            
+            while (size >= 1024 && unitIndex < units.length - 1) {
+                size /= 1024;
+                unitIndex++;
+            }
+            
+            return `${size.toFixed(1)} ${units[unitIndex]}`;
+        }
         
         async function checkStatus(videoId) {
             const response = await fetch(`/status/${videoId}`);
@@ -589,7 +604,8 @@
                         deleteBtn.style.display = 'none';
                         downloadFileBtn.style.display = 'none';
                     } else if (data.status === 'downloading') {
-                        statusDiv.textContent = 'Downloading...';
+                        const speedText = data.speed ? ` • ${formatSpeed(data.speed)}` : '';
+                        statusDiv.textContent = `Downloading...${speedText}`;
                         const progress = data.progress || 0;
                         progressDiv.style.width = progress + '%';
                         progressText.textContent = progress + '%';
