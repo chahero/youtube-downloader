@@ -4,9 +4,18 @@
     box-sizing: border-box;
 }
 
+/* 색상 변수를 정의하여 사용하면 더 유연하게 관리가 가능합니다. */
+:root {
+    --primary-color: #58a6ff;         /* GitHub Blue */
+    --primary-hover-color: #1f6feb;   /* Darker Blue */
+    --bg-color: #0d1117;              /* Deep Dark Background */
+    --card-bg: #161b22;               /* Slightly Lighter Card Background */
+    --border-color: #30363d;          /* Border/Separator Color */
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: #0d1117;
+    background: var(--bg-color);
     min-height: 100vh;
     padding: 20px;
     color: #c9d1d9;
@@ -15,16 +24,97 @@ body {
 .container {
     max-width: 900px;
     margin: 0 auto;
-    background: #161b22;
+    background: var(--card-bg);
     border-radius: 12px;
     padding: 30px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    border: 1px solid #30363d;
+    border: 1px solid var(--border-color);
 }
 
+/* ------------------------------------------------ */
+/* 인증 관련 스타일 (로그인/로그아웃) */
+/* ------------------------------------------------ */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 2em;
+}
+.app-header h1 {
+    margin: 0;
+    font-size: 1.8em;
+    color: var(--primary-color);
+}
+.user-status {
+    display: flex;
+    align-items: center;
+    font-size: 0.9em;
+    color: #bbb;
+}
+.user-status a {
+    margin-left: 15px;
+    color: var(--primary-color);
+    text-decoration: none;
+    padding: 5px 10px;
+    border: 1px solid var(--primary-color);
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+.user-status a:hover {
+    background-color: var(--primary-hover-color);
+    color: white;
+}
+
+/* login.html 전용 스타일 */
+.auth-container { 
+    max-width: 400px; 
+    margin: 5em auto; 
+    padding: 2em; 
+    background-color: var(--card-bg); 
+    border-radius: 12px; 
+    text-align: center; 
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-color);
+}
+.auth-container input { 
+    margin-bottom: 1em; 
+    width: 100%;
+}
+.auth-container p {
+    color: #8b949e;
+    margin-bottom: 1em;
+}
+
+/* Flash/Error 메시지 스타일 */
+.flash-messages { 
+    list-style: none; 
+    padding: 10px; 
+    margin-bottom: 1em; 
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+.flash-messages.error,
+.flash-messages li.error { 
+    color: #ff8a8a; 
+    background-color: #f8514933;
+    border: 1px solid #f85149;
+}
+.flash-messages.success,
+.flash-messages li.success { 
+    color: #8aff8a; 
+    background-color: #3fb95033;
+    border: 1px solid #3fb950;
+}
+/* ------------------------------------------------ */
+
+
+/* 기존 H1 스타일 (index.html에서 app-header로 대체되었을 경우 사용 안 함) */
 h1 {
     text-align: center;
-    color: #58a6ff;
+    color: var(--primary-color);
     margin-bottom: 30px;
     font-size: 28px;
 }
@@ -33,11 +123,12 @@ h1 {
     margin-bottom: 20px;
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
     width: 100%;
     padding: 15px;
-    background: #0d1117;
-    border: 1px solid #30363d;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 14px;
     color: #c9d1d9;
@@ -45,12 +136,14 @@ input[type="text"] {
     transition: border-color 0.3s;
 }
 
-input[type="text"]:focus {
+input[type="text"]:focus,
+input[type="password"]:focus {
     outline: none;
-    border-color: #58a6ff;
+    border-color: var(--primary-color);
 }
 
-input[type="text"]::placeholder {
+input[type="text"]::placeholder,
+input[type="password"]::placeholder {
     color: #8b949e;
 }
 
@@ -79,23 +172,23 @@ input[type="text"]::placeholder {
     gap: 8px;
     margin-bottom: 0;
     padding: 12px;
-    background: #0d1117;
-    border: 1px solid #30363d;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.3s;
 }
 
 .option-group label:has(input[type="checkbox"]):hover {
-    border-color: #58a6ff;
-    background: #161b22;
+    border-color: var(--primary-color);
+    background: var(--card-bg);
 }
 
 input[type="checkbox"] {
     width: 18px;
     height: 18px;
     cursor: pointer;
-    accent-color: #58a6ff;
+    accent-color: var(--primary-color);
 }
 
 .checkbox-label {
@@ -107,8 +200,8 @@ input[type="checkbox"] {
 select {
     width: 100%;
     padding: 12px;
-    background: #0d1117;
-    border: 1px solid #30363d;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 14px;
     color: #c9d1d9;
@@ -117,12 +210,12 @@ select {
 }
 
 select:hover {
-    border-color: #58a6ff;
+    border-color: var(--primary-color);
 }
 
 select:focus {
     outline: none;
-    border-color: #58a6ff;
+    border-color: var(--primary-color);
 }
 
 select:disabled {
@@ -159,12 +252,12 @@ button:disabled {
 .info {
     text-align: center;
     padding: 12px;
-    background: #0d1117;
+    background: var(--bg-color);
     border-radius: 8px;
     margin-bottom: 25px;
     font-size: 14px;
     color: #8b949e;
-    border: 1px solid #30363d;
+    border: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -176,27 +269,27 @@ button:disabled {
 }
 
 .info span {
-    color: #58a6ff;
+    color: var(--primary-color);
     font-weight: bold;
 }
 
 /* 플레이리스트 그룹 */
 .playlist-group {
-    background: #0d1117;
+    background: var(--bg-color);
     border-radius: 10px;
     margin-bottom: 20px;
-    border: 2px solid #a371f7;
+    border: 2px solid #a371f7; /* 보라색 */
     overflow: hidden;
     transition: all 0.3s;
 }
 
 .playlist-header {
-    background: #161b22;
+    background: var(--card-bg);
     padding: 15px;
     display: flex;
     align-items: center;
     gap: 15px;
-    border-bottom: 1px solid #30363d;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .playlist-thumbnail,
@@ -237,7 +330,7 @@ button:disabled {
 
 .playlist-quality {
     font-size: 12px;
-    background: #58a6ff;
+    background: var(--primary-color);
     color: white;
     padding: 3px 8px;
     border-radius: 4px;
@@ -306,7 +399,7 @@ button:disabled {
 
 .quality-badge {
     display: inline-block;
-    background: #58a6ff;
+    background: var(--primary-color);
     color: white;
     padding: 2px 8px;
     border-radius: 4px;
@@ -317,12 +410,12 @@ button:disabled {
 
 /* 다운로드 항목 */
 .download-item {
-    background: #0d1117;
+    background: var(--bg-color);
     padding: 15px;
     border-radius: 8px;
     margin-bottom: 15px;
-    border-left: 4px solid #30363d;
-    border: 1px solid #30363d;
+    border-left: 4px solid var(--border-color);
+    border: 1px solid var(--border-color);
     transition: all 0.3s;
 }
 
@@ -331,7 +424,7 @@ button:disabled {
 }
 
 .download-item.downloading {
-    border-left-color: #58a6ff;
+    border-left-color: var(--primary-color);
     background: #0d1520;
 }
 
@@ -422,11 +515,11 @@ button:disabled {
 }
 
 .download-file-btn {
-    background: #58a6ff;
+    background: var(--primary-color);
 }
 
 .download-file-btn:hover {
-    background: #1f6feb;
+    background: var(--primary-hover-color);
 }
 
 .cancel-btn {
@@ -458,12 +551,12 @@ button:disabled {
     background: #21262d;
     border-radius: 6px;
     overflow: hidden;
-    border: 1px solid #30363d;
+    border: 1px solid var(--border-color);
 }
 
 .progress {
     height: 100%;
-    background: linear-gradient(90deg, #58a6ff 0%, #1f6feb 100%);
+    background: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-hover-color) 100%);
     transition: width 0.3s;
     display: flex;
     align-items: center;

@@ -1,20 +1,31 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import (
+    Flask, render_template, request, jsonify, send_file, 
+    session, redirect, url_for, make_response
+)
 import yt_dlp
 import os
 import threading
 from datetime import datetime
 from queue import Queue
 from dotenv import load_dotenv
+import requests
+from functools import wraps
 
 load_dotenv()
 
-app = Flask(__name__)
-
+# --- 다운로더 설정 (기존) ---
 DOWNLOAD_FOLDER = os.getenv('DOWNLOAD_FOLDER', './downloads')
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv('MAX_CONCURRENT_DOWNLOADS', 3))
-FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
-FLASK_PORT = int(os.getenv('FLASK_PORT', 5000))
 FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+
+# --- 환경 변수 (최소화된 sora-generator 방식) ---
+GATEWAY_URL = os.getenv('GATEWAY_URL')
+# SECRET_KEY를 세션 키로 사용
+FLASK_SECRET_KEY = os.getenv('SECRET_KEY', 'default_secret_key_for_dev') 
+
+app = Flask(__name__)
+# 세션 관리를 위한 SECRET_KEY 설정
+app.secret_key = FLASK_SECRET_KEY
 
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
@@ -146,10 +157,6 @@ for _ in range(MAX_CONCURRENT_DOWNLOADS):
     worker = threading.Thread(target=download_worker, daemon=True)
     worker.start()
 
-@app.route('/')
-def index():
-    return render_template('index.html', max_downloads=MAX_CONCURRENT_DOWNLOADS)
-
 def extract_playlist_info(url):
     """플레이리스트 정보 추출"""
     ydl_opts = {
@@ -209,7 +216,75 @@ def extract_playlist_info(url):
     except Exception as e:
         raise Exception(f"Failed to extract info: {str(e)}")
 
+# --- 인증 라우트 및 데코레이터 ---
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # 세션에 'current_user' 정보가 없으면 로그인 페이지로 리다이렉트
+        if 'current_user' not in session:
+            # flash('서비스를 이용하려면 로그인이 필요합니다.', 'error') # 다운로더는 AJAX가 많아 flash는 비활성화
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'current_user' in session:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        # GATEWAY_URL 체크 (sora-generator main.py 참고)
+        if not GATEWAY_URL:
+            # flash('게이트웨이 서버 주소가 설정되지 않았습니다.', 'error')
+            return render_template('login.html', error='게이트웨이 서버 주소가 설정되지 않았습니다.')
+
+        try:
+            auth_url = f"{GATEWAY_URL}/api/authenticate"
+            payload = {'username': username, 'password': password}
+            
+            response = requests.post(
+                auth_url,
+                json=payload,
+                timeout=5
+            )
+
+            auth_data = response.json()
+            if response.status_code == 200 and auth_data.get('status') == 'success':
+                # sora-generator와 동일하게 user 정보를 세션에 저장
+                session['current_user'] = auth_data['user']
+                session.permanent = True
+                # flash('로그인 성공', 'success')
+                return redirect(url_for('index'))
+            else:
+                # flash(auth_data.get('error', '인증에 실패했습니다.'), 'error')
+                 return render_template('login.html', error=auth_data.get('error', '인증에 실패했습니다.'))
+
+        except requests.exceptions.RequestException as e:
+            # flash('인증 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.', 'error')
+            return render_template('login.html', error=f'인증 서버 연결 실패: {e}')
+        
+    # GET 요청 시, 플래시 메시지 대신 에러 파라미터로 템플릿에 전달 가능
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    # flash('성공적으로 로그아웃되었습니다.', 'success')
+    return redirect(url_for('login'))
+
+@app.route('/')
+@login_required 
+def index():
+    # 사용자 이름을 index.html로 전달
+    user_info = session.get('current_user', {})
+    username = user_info.get('username', 'User')
+    return render_template('index.html', max_downloads=MAX_CONCURRENT_DOWNLOADS, username=username)
+
 @app.route('/download', methods=['POST'])
+@login_required
 def start_download():
     data = request.json
     url = data.get('url', '').strip()
@@ -344,11 +419,13 @@ def start_download():
         return jsonify({'error': str(e)}), 400
 
 @app.route('/status/<video_id>')
+@login_required
 def get_status(video_id):
     status = download_status.get(video_id, {'status': 'not_found'})
     return jsonify(status)
 
 @app.route('/playlist-status/<playlist_id>')
+@login_required
 def get_playlist_status(playlist_id):
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
@@ -380,6 +457,7 @@ def get_playlist_status(playlist_id):
     })
 
 @app.route('/cancel/<video_id>', methods=['POST'])
+@login_required
 def cancel_download(video_id):
     if video_id in cancel_events:
         cancel_events[video_id].set()
@@ -387,6 +465,7 @@ def cancel_download(video_id):
     return jsonify({'error': 'Not found'}), 404
 
 @app.route('/cancel-playlist/<playlist_id>', methods=['POST'])
+@login_required
 def cancel_playlist(playlist_id):
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
@@ -407,6 +486,7 @@ def cancel_playlist(playlist_id):
     })
 
 @app.route('/delete/<video_id>', methods=['DELETE'])
+@login_required
 def delete_download(video_id):
     if video_id in download_status:
         status = download_status[video_id].get('status')
@@ -422,6 +502,7 @@ def delete_download(video_id):
     return jsonify({'error': 'Not found'}), 404
 
 @app.route('/delete-playlist/<playlist_id>', methods=['DELETE'])
+@login_required
 def delete_playlist(playlist_id):
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
@@ -446,6 +527,7 @@ def delete_playlist(playlist_id):
     })
 
 @app.route('/download-file/<video_id>')
+@login_required
 def download_file(video_id):
     if video_id not in download_status:
         return jsonify({'error': 'Not found'}), 404
@@ -467,6 +549,7 @@ def download_file(video_id):
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 @app.route('/clear-inactive', methods=['POST'])
+@login_required
 def clear_inactive():
     inactive_statuses = ['completed', 'cancelled', 'error']
     deleted_videos = []
@@ -496,6 +579,7 @@ def clear_inactive():
     })
     
 @app.route('/clean-storage', methods=['POST'])
+@login_required
 def clean_storage():
     try:
         # 진행 중인 다운로드의 파일명 수집
@@ -526,4 +610,7 @@ def clean_storage():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', '5000'))
+    debug = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+    app.run(host=host, port=port, debug=debug, threaded=True)

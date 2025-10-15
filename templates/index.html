@@ -8,7 +8,13 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎥 YouTube Downloader</h1>
+        <div class="app-header">
+            🎥 YouTube Downloader
+            <div class="user-status">
+                <span>Welcome, {{ username if username else 'User' }}</span> 
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </div>
+        </div>
         
         <div class="input-section">
             <input type="text" id="url" placeholder="Enter YouTube URL or Playlist URL">

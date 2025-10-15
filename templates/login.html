@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>로그인 - Youtube Downloader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .auth-container { max-width: 400px; margin: 5em auto; padding: 2em; background-color: var(--card-bg); border-radius: 12px; text-align: center; }
+        .auth-container input { margin-bottom: 1em; }
+        .flash-messages { list-style: none; padding: 0; margin-bottom: 1em; }
+        .flash-messages li.error { color: #ff8a8a; }
+        .flash-messages li.success { color: #8aff8a; }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <h1>Youtube Downloader</h1>
+        <p>서비스를 이용하려면 로그인이 필요합니다.<br><small>(계정은 Home Gateway에서 생성하세요)</small></p>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <ul class="flash-messages">
+                {% for category, message in messages %}
+                <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        {% endwith %}
+
+        <hr style="border-color: var(--border-color); margin: 2em 0;">
+        <form method="POST" action="{{ url_for('login') }}">
+            <input type="text" name="username" placeholder="사용자 이름" required>
+            <input type="password" name="password" placeholder="비밀번호" required>
+            <button type="submit">로그인</button>
+        </form>
+    </div>
+</body>
+</html>
