@@ -611,6 +611,6 @@ def clean_storage():
 
 if __name__ == '__main__':
     host = os.getenv('HOST', '0.0.0.0')
-    port = int(os.getenv('PORT', '5000'))
-    debug = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+    port = int(os.getenv('PORT', '5002'))
+    debug = os.getenv('DEBUG', 'True').lower() == 'true'
     app.run(host=host, port=port, debug=debug, threaded=True)

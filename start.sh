@@ -22,7 +22,7 @@ pip install -q -r requirements.txt
 echo ""
 echo "=============================="
 echo "Server started!"
-echo "Access: http://localhost:5000"
+echo "Access: http://localhost:5002"
 echo "Press Ctrl+C to stop"
 echo "=============================="
 echo ""

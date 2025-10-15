@@ -22,7 +22,7 @@ start() {
     nohup python app.py > $LOG_FILE 2> $ERROR_LOG &
     echo $! > $PID_FILE
     echo "✓ Server started! (PID: $!)"
-    echo "  URL: http://localhost:5000"
+    echo "  URL: http://localhost:5002"
     echo "  Log: tail -f $LOG_FILE"
 }
 
