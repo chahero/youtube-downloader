@@ -1,160 +1,236 @@
+[한글 버전] 🇰🇷 [English Version](README.en.md)
+
 # YouTube Downloader
 
-A web-based YouTube video and playlist downloader built with Flask and yt-dlp.
+Flask와 yt-dlp를 기반으로 만든 사용자 인증 및 관리자 승인 시스템이 포함된 웹 기반 YouTube 영상 및 플레이리스트 다운로더입니다.
 
-## Features
+## 기능
 
-- 🎥 Download YouTube videos and playlists
-- 🎬 Multiple quality options (4K to 360p)
-- 🎵 Audio extraction (MP3, M4A)
-- 📊 Real-time progress and download speed
-- 🔄 Concurrent downloads
-- 🔔 Desktop notifications
-- 🌙 Dark mode UI
+- 🎥 YouTube 영상 및 플레이리스트 다운로드
+- 🎬 다양한 화질 옵션 (4K부터 360p까지)
+- 🎵 오디오 추출 (MP3, M4A)
+- 📊 실시간 진행 상황 및 다운로드 속도 표시
+- 🔄 동시 다운로드 (설정 가능한 제한)
+- 🔔 데스크톱 알림
+- 🌙 다크 모드 UI
+- 🔐 SQLite 데이터베이스 기반 사용자 인증
+- 👨‍💼 새 사용자를 위한 관리자 승인 시스템
+- 🛡️ 역할 기반 접근 제어
 
-## Quick Start
+## 빠른 시작
 
-### Installation
+### 설치
 
 ```bash
-# Clone repository
+# 저장소 복제
 git clone https://github.com/chahero/youtube-downloader
 cd youtube-downloader
 
-# Install FFmpeg (macOS)
+# FFmpeg 설치 (macOS)
 brew install ffmpeg
 
-# Create virtual environment
+# 가상 환경 생성
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
+# 의존성 설치
 pip install -r requirements.txt
 
-# Configure environment
+# 환경 설정
 cp .env.example .env
 ```
 
-### Run Application
+### 데이터베이스 초기화
 
-**Foreground (Development):**
+```bash
+# SQLite 데이터베이스 초기화
+python init_db.py
+
+# instance/app.db 파일이 자동으로 생성됩니다
+```
+
+### 애플리케이션 실행
+
+**포그라운드 (개발 모드):**
 ```bash
 chmod +x start.sh
 ./start.sh
 ```
 
-**Background (Production):**
+**백그라운드 (프로덕션):**
 ```bash
 chmod +x manage.sh
 
-# Start
+# 시작
 ./manage.sh start
 
-# Check status
+# 상태 확인
 ./manage.sh status
 
-# Restart
+# 재시작
 ./manage.sh restart
 
-# Stop
+# 중지
 ./manage.sh stop
 ```
 
-Access at `http://localhost:5000`
+`http://localhost:5005` 에서 접속 (.env 파일에서 설정 가능)
 
-## Configuration
+## 설정
 
-Edit `.env`:
+`.env` 파일 편집:
 
 ```env
+# 다운로드 설정
 DOWNLOAD_FOLDER=./downloads
 MAX_CONCURRENT_DOWNLOADS=3
-FLASK_HOST=0.0.0.0
-FLASK_PORT=5000
-FLASK_DEBUG=True
+
+# Flask 설정
+HOST=0.0.0.0
+PORT=5005
+DEBUG=True
+
+# 보안
+SECRET_KEY=your-secret-key-here
 ```
 
-## Usage
+프로덕션 환경에서는 강력한 SECRET_KEY를 생성하세요:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
 
-1. Enter YouTube URL (video or playlist)
-2. Select quality and format
-3. Click "Start Download"
-4. Monitor progress with real-time speed
-5. Download completed files
+## 사용법
 
-### Management Features
+### 인증
 
-- **Clear Inactive** - Remove completed/cancelled items from list
-- **Clean Storage** - Delete all downloaded files from server
+1. **첫 접속**: `/register` 에서 첫 번째 계정 생성
+   - 첫 번째 사용자는 자동으로 관리자로 설정되어 즉시 승인됨
+   - 그 이후의 사용자는 관리자의 승인이 필요함
 
-## Log Management
+2. **로그인**: `/login` 에서 자격증명 입력
+   - 승인된 사용자만 로그인 가능
+   - 승인 대기 중인 사용자는 "승인 대기 중인 계정입니다" 메시지 표시
 
-Logs are in the `logs/` directory:
+### 관리자 대시보드
+
+관리자는 `/admin` 에 접속하여:
+- 승인 대기 중인 사용자 목록 확인
+- 새 사용자 승인 또는 거절
+- 승인된 사용자 목록 확인
+- 사용자 접근 제어 관리
+
+### 다운로드 관리
+
+1. YouTube URL 입력 (영상 또는 플레이리스트)
+2. 화질 및 포맷 선택
+3. "Start Download" 클릭
+4. 실시간 속도와 함께 진행 상황 모니터링
+5. 다운로드된 파일 확인
+
+#### 관리 기능
+
+- **Clear Inactive** - 완료/취소된 항목을 목록에서 제거
+- **Clean Storage** - 서버의 모든 다운로드 파일 삭제
+
+## 로그 관리
+
+로그는 `logs/` 디렉토리에 저장됩니다:
 
 ```bash
-# View logs in real-time
+# 실시간 로그 확인
 tail -f logs/app.log
 
-# View errors
+# 오류 로그 확인
 tail -f logs/error.log
 ```
 
-## Project Structure
+## 프로젝트 구조
 
 ```
 youtube-downloader/
-├── app.py                 # Flask application
-├── manage.sh              # Service management (macOS/Linux)
-├── start.sh               # Foreground run script
+├── app.py                      # Flask 애플리케이션 (메인)
+├── init_db.py                  # 데이터베이스 초기화 스크립트
+├── manage.sh                   # 서비스 관리 (macOS/Linux)
+├── start.sh                    # 포그라운드 실행 스크립트
+├── requirements.txt            # Python 의존성
+├── .env.example                # 환경 설정 템플릿
+├── .env                        # 환경 설정 (로컬)
 ├── templates/
-│   └── index.html         # Web interface
+│   ├── index.html              # 다운로드 인터페이스
+│   ├── login.html              # 로그인 페이지
+│   ├── register.html           # 회원가입 페이지
+│   └── admin.html              # 관리자 대시보드
 ├── static/
-│   └── style.css          # Stylesheet
-├── downloads/             # Downloaded files
-└── logs/                  # Application logs
+│   └── style.css               # 스타일시트 (다크 테마)
+├── instance/
+│   └── app.db                  # SQLite 데이터베이스 (자동 생성)
+├── downloads/                  # 다운로드 파일 디렉토리
+└── logs/                       # 애플리케이션 로그 디렉토리
 ```
 
-## Troubleshooting
+## 문제 해결
 
-**FFmpeg not found:**
+**데이터베이스 스키마 오류 (no such column):**
 ```bash
+# 데이터베이스 재초기화
+python init_db.py
+```
+
+**FFmpeg를 찾을 수 없음:**
+```bash
+# macOS
 brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+
+# Windows
+# https://ffmpeg.org/download.html 에서 다운로드
 ```
 
-**Port in use:**
+**포트가 이미 사용 중:**
 ```bash
-lsof -i :5000
+# 포트 5005를 사용 중인 프로세스 확인
+lsof -i :5005
+
+# 프로세스 종료
 kill -9 <PID>
 ```
 
-**Service issues:**
+**서비스 문제:**
 ```bash
-# Check logs
+# 로그 확인
 tail -f logs/app.log
 
-# Remove stale PID
-rm app.pid
+# 서비스 재시작
+./manage.sh restart
 
-# Kill process manually
+# 프로세스 수동 종료
 pkill -f "python app.py"
 ```
 
-## Requirements
+**로그인할 수 없음 (승인 대기 중):**
+- `/admin` 대시보드에서 관리자의 승인을 기다리세요
+- 관리자가 계정을 승인하거나 거절할 수 있습니다
+
+## 요구사항
 
 - Python 3.7+
 - FFmpeg
-- Modern web browser
+- 최신 웹 브라우저
 
-## Tech Stack
+## 기술 스택
 
-- Backend: Flask
-- Downloader: yt-dlp
-- Frontend: HTML/CSS/JavaScript
+- **Backend**: Flask 3.1.2, Flask-SQLAlchemy 3.1.1, Flask-Login 0.6.3
+- **Database**: SQLAlchemy ORM을 사용한 SQLite
+- **Downloader**: yt-dlp 2025.10.22
+- **Frontend**: HTML/CSS/JavaScript (다크 모드 UI)
+- **Security**: Werkzeug (비밀번호 해싱), 세션 기반 인증
 
-## License
+## 라이선스
 
-For educational purposes. Comply with YouTube's Terms of Service and copyright laws.
+교육 목적으로만 사용합니다. YouTube의 서비스 약관 및 저작권법을 준수하세요.
 
-## Disclaimer
+## 부인
 
-This tool is for personal use only. Users are responsible for ensuring compliance with applicable laws and terms of service.
+이 도구는 개인 사용만 가능합니다. 사용자는 해당 법률 및 서비스 약관을 준수할 책임이 있습니다.
