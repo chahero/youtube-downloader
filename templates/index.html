@@ -11,7 +11,10 @@
         <div class="app-header">
             🎥 YouTube Downloader
             <div class="user-status">
-                <span>Welcome, {{ username if username else 'User' }}</span> 
+                <span>Welcome, {{ username if username else 'User' }}</span>
+                {% if is_admin %}
+                <a href="{{ url_for('admin_dashboard') }}" style="color: #4a9eff;">👨‍💼 Admin</a>
+                {% endif %}
                 <a href="{{ url_for('logout') }}">Logout</a>
             </div>
         </div>

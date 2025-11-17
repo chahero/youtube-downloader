@@ -38,6 +38,8 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
+    is_approved = db.Column(db.Boolean, default=False)  # 관리자 승인 여부
+    is_admin = db.Column(db.Boolean, default=False)     # 관리자 권한
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -263,8 +265,16 @@ def login():
             user = User.query.filter_by(username=username).first()
 
             if user and user.check_password(password):
+                # 관리자 승인 여부 확인
+                if not user.is_approved:
+                    return render_template('login.html', error='승인 대기 중인 계정입니다. 관리자의 승인을 기다려주세요.')
+
                 # 세션에 사용자 정보 저장
-                session['current_user'] = {'id': user.id, 'username': user.username}
+                session['current_user'] = {
+                    'id': user.id,
+                    'username': user.username,
+                    'is_admin': user.is_admin
+                }
                 session.permanent = True
                 return redirect(url_for('index'))
             else:
@@ -279,6 +289,78 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+# --- Admin 라우트 및 API ---
+@app.route('/admin')
+@login_required
+def admin_dashboard():
+    """관리자 대시보드"""
+    current_user = session.get('current_user', {})
+
+    # 관리자 권한 확인
+    if not current_user.get('is_admin'):
+        return render_template('admin.html', error='관리자만 접근할 수 있습니다.'), 403
+
+    try:
+        # 승인 대기 중인 사용자
+        pending_users = User.query.filter_by(is_approved=False).all()
+        # 승인된 사용자
+        approved_users = User.query.filter_by(is_approved=True).all()
+
+        return render_template('admin.html',
+                             pending_users=pending_users,
+                             approved_users=approved_users,
+                             current_user_id=current_user.get('id'))
+    except Exception as e:
+        return render_template('admin.html', error=f'오류가 발생했습니다: {str(e)}'), 500
+
+@app.route('/api/admin/approve/<int:user_id>', methods=['POST'])
+@login_required
+def approve_user(user_id):
+    """사용자 승인 API"""
+    current_user = session.get('current_user', {})
+
+    # 관리자 권한 확인
+    if not current_user.get('is_admin'):
+        return jsonify({'error': '관리자만 접근할 수 있습니다.'}), 403
+
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': '사용자를 찾을 수 없습니다.'}), 404
+
+        user.is_approved = True
+        db.session.commit()
+
+        return jsonify({'success': True, 'message': f'{user.username} 사용자가 승인되었습니다.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'오류가 발생했습니다: {str(e)}'}), 500
+
+@app.route('/api/admin/reject/<int:user_id>', methods=['POST'])
+@login_required
+def reject_user(user_id):
+    """사용자 거절 API"""
+    current_user = session.get('current_user', {})
+
+    # 관리자 권한 확인
+    if not current_user.get('is_admin'):
+        return jsonify({'error': '관리자만 접근할 수 있습니다.'}), 403
+
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': '사용자를 찾을 수 없습니다.'}), 404
+
+        # 계정 삭제
+        username = user.username
+        db.session.delete(user)
+        db.session.commit()
+
+        return jsonify({'success': True, 'message': f'{username} 사용자가 거절되었습니다.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'오류가 발생했습니다: {str(e)}'}), 500
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -307,10 +389,21 @@ def register():
             # 새 사용자 생성
             new_user = User(username=username)
             new_user.set_password(password)
+
+            # 첫 번째 사용자는 자동으로 Admin 설정
+            user_count = User.query.count()
+            if user_count == 0:
+                new_user.is_admin = True
+                new_user.is_approved = True
+                message = '첫 번째 관리자 계정으로 생성되었습니다. 로그인하세요.'
+            else:
+                new_user.is_approved = False
+                message = '회원가입 신청이 완료되었습니다. 관리자의 승인을 기다려주세요.'
+
             db.session.add(new_user)
             db.session.commit()
 
-            return render_template('register.html', success='회원가입에 성공했습니다. 로그인 페이지로 이동합니다.')
+            return render_template('register.html', success=message)
 
         except Exception as e:
             db.session.rollback()
@@ -319,12 +412,13 @@ def register():
     return render_template('register.html')
 
 @app.route('/')
-@login_required 
+@login_required
 def index():
     # 사용자 이름을 index.html로 전달
     user_info = session.get('current_user', {})
     username = user_info.get('username', 'User')
-    return render_template('index.html', max_downloads=MAX_CONCURRENT_DOWNLOADS, username=username)
+    is_admin = user_info.get('is_admin', False)
+    return render_template('index.html', max_downloads=MAX_CONCURRENT_DOWNLOADS, username=username, is_admin=is_admin)
 
 @app.route('/download', methods=['POST'])
 @login_required
