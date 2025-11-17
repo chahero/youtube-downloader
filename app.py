@@ -1,14 +1,15 @@
 from flask import (
-    Flask, render_template, request, jsonify, send_file, 
+    Flask, render_template, request, jsonify, send_file,
     session, redirect, url_for, make_response
 )
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 import yt_dlp
 import os
 import threading
 from datetime import datetime
 from queue import Queue
 from dotenv import load_dotenv
-import requests
 from functools import wraps
 
 load_dotenv()
@@ -18,14 +19,32 @@ DOWNLOAD_FOLDER = os.getenv('DOWNLOAD_FOLDER', './downloads')
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv('MAX_CONCURRENT_DOWNLOADS', 3))
 FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
 
-# --- 환경 변수 (최소화된 sora-generator 방식) ---
-GATEWAY_URL = os.getenv('GATEWAY_URL')
-# SECRET_KEY를 세션 키로 사용
-FLASK_SECRET_KEY = os.getenv('SECRET_KEY', 'default_secret_key_for_dev') 
+# --- 환경 변수 ---
+FLASK_SECRET_KEY = os.getenv('SECRET_KEY', 'default_secret_key_for_dev')
 
 app = Flask(__name__)
 # 세션 관리를 위한 SECRET_KEY 설정
 app.secret_key = FLASK_SECRET_KEY
+
+# --- SQLite 데이터베이스 설정 ---
+instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+os.makedirs(instance_path, exist_ok=True)
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(instance_path, "app.db")}'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# --- User 모델 ---
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def set_password(self, password):
+        self.password = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password, password)
 
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
@@ -235,45 +254,69 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        
-        # GATEWAY_URL 체크 (sora-generator main.py 참고)
-        if not GATEWAY_URL:
-            # flash('게이트웨이 서버 주소가 설정되지 않았습니다.', 'error')
-            return render_template('login.html', error='게이트웨이 서버 주소가 설정되지 않았습니다.')
+
+        if not username or not password:
+            return render_template('login.html', error='아이디와 비밀번호를 입력하세요.')
 
         try:
-            auth_url = f"{GATEWAY_URL}/api/authenticate"
-            payload = {'username': username, 'password': password}
-            
-            response = requests.post(
-                auth_url,
-                json=payload,
-                timeout=5
-            )
+            # SQLite 데이터베이스에서 사용자 조회
+            user = User.query.filter_by(username=username).first()
 
-            auth_data = response.json()
-            if response.status_code == 200 and auth_data.get('status') == 'success':
-                # sora-generator와 동일하게 user 정보를 세션에 저장
-                session['current_user'] = auth_data['user']
+            if user and user.check_password(password):
+                # 세션에 사용자 정보 저장
+                session['current_user'] = {'id': user.id, 'username': user.username}
                 session.permanent = True
-                # flash('로그인 성공', 'success')
                 return redirect(url_for('index'))
             else:
-                # flash(auth_data.get('error', '인증에 실패했습니다.'), 'error')
-                 return render_template('login.html', error=auth_data.get('error', '인증에 실패했습니다.'))
+                return render_template('login.html', error='아이디 또는 비밀번호가 잘못되었습니다.')
 
-        except requests.exceptions.RequestException as e:
-            # flash('인증 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.', 'error')
-            return render_template('login.html', error=f'인증 서버 연결 실패: {e}')
-        
-    # GET 요청 시, 플래시 메시지 대신 에러 파라미터로 템플릿에 전달 가능
+        except Exception as e:
+            return render_template('login.html', error=f'로그인 중 오류가 발생했습니다: {str(e)}')
+
     return render_template('login.html')
 
 @app.route('/logout')
 def logout():
     session.clear()
-    # flash('성공적으로 로그아웃되었습니다.', 'success')
     return redirect(url_for('login'))
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if 'current_user' in session:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        password_confirm = request.form.get('password_confirm')
+
+        if not username or not password or not password_confirm:
+            return render_template('register.html', error='모든 필드를 입력하세요.')
+
+        if password != password_confirm:
+            return render_template('register.html', error='비밀번호가 일치하지 않습니다.')
+
+        if len(password) < 4:
+            return render_template('register.html', error='비밀번호는 4글자 이상이어야 합니다.')
+
+        try:
+            # 중복 체크
+            if User.query.filter_by(username=username).first():
+                return render_template('register.html', error='이미 존재하는 아이디입니다.')
+
+            # 새 사용자 생성
+            new_user = User(username=username)
+            new_user.set_password(password)
+            db.session.add(new_user)
+            db.session.commit()
+
+            return render_template('register.html', success='회원가입에 성공했습니다. 로그인 페이지로 이동합니다.')
+
+        except Exception as e:
+            db.session.rollback()
+            return render_template('register.html', error=f'회원가입 중 오류가 발생했습니다: {str(e)}')
+
+    return render_template('register.html')
 
 @app.route('/')
 @login_required 
@@ -610,6 +653,10 @@ def clean_storage():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    # 데이터베이스 테이블 생성
+    with app.app_context():
+        db.create_all()
+
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', '5002'))
     debug = os.getenv('DEBUG', 'True').lower() == 'true'
