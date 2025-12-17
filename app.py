@@ -433,8 +433,12 @@ def start_download():
     
     try:
         info = extract_playlist_info(url)
-        
+
+        # 플레이리스트 URL 차단
         if info['is_playlist']:
+            return jsonify({'error': '플레이리스트는 지원하지 않습니다. 단일 영상 URL만 입력해주세요.'}), 400
+
+        if False:  # 플레이리스트 기능 비활성화
             playlist_id = f"playlist_{datetime.now().timestamp()}"
             playlist_groups[playlist_id] = {
                 'title': info['title'],
