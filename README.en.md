@@ -1,17 +1,20 @@
-[English Version] 🌐 [한글 버전](README.md)
+[English Version] [한글 버전](README.md)
 
 # YouTube Downloader
 
-A web-based YouTube video and playlist downloader with user authentication and admin approval system, built with Flask and yt-dlp.
+A web-based YouTube video downloader with user authentication and admin approval system, built with Flask and yt-dlp.
 
 ## Features
 
-- 🎥 Download YouTube videos and playlists
+- 🎥 Download YouTube single videos
 - 🎬 Multiple quality options (4K to 360p)
 - 🎵 Audio extraction (MP3, M4A)
 - 📊 Real-time progress and download speed
 - 🔄 Concurrent downloads (configurable limit)
-- 🔔 Desktop notifications
+- 📋 Download history saved to DB with search
+- 🔍 Duplicate download detection and warning
+- 🖼️ Auto-display YouTube thumbnails
+- 🔗 Click video to open original YouTube
 - 🌙 Dark mode UI
 - 🔐 User authentication with SQLite database
 - 👨‍💼 Admin approval system for new users
@@ -121,16 +124,24 @@ Admin users can access `/admin` to:
 
 ### Download Management
 
-1. Enter YouTube URL (video or playlist)
+1. Enter YouTube URL (single video only, playlists not supported)
 2. Select quality and format
 3. Click "Start Download"
 4. Monitor progress with real-time speed
-5. Download completed files
+5. Download completed files via download button
 
-#### Management Features
+### Filters and Search
 
-- **Clear Inactive** - Remove completed/cancelled items from list
-- **Clean Storage** - Delete all downloaded files from server
+- **All**: Show all download items
+- **Active**: Queued/downloading/failed items
+- **Completed**: Completed download items
+- **Search**: Search by video title
+
+### Management Features
+
+- **Cleanup Button**: Delete failed/cancelled items + clean temp files
+- **Individual Delete**: Delete item with file option
+- **Duplicate Detection**: Warning when re-downloading already downloaded video
 
 ## Log Management
 
@@ -167,6 +178,42 @@ youtube-downloader/
 ├── downloads/                  # Downloaded files directory
 └── logs/                       # Application logs directory
 ```
+
+## Database Models
+
+### User
+- `id`: Primary key
+- `username`: Username (unique)
+- `password`: Hashed password
+- `is_approved`: Admin approval status
+- `is_admin`: Admin privilege
+- `created_at`: Creation timestamp
+
+### DownloadHistory
+- `id`: Primary key
+- `user_id`: User ID (foreign key)
+- `url`: YouTube URL
+- `video_title`: Video title
+- `filename`: Saved filename
+- `quality`: Quality setting
+- `format_type`: Format (video, audio_mp3, audio_m4a)
+- `status`: Status (completed)
+- `file_size`: File size (bytes)
+- `created_at`: Creation timestamp
+- `completed_at`: Completion timestamp
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/downloads` | Get download list (status, q, page params) |
+| DELETE | `/api/downloads/<id>` | Delete download item (delete_file option) |
+| POST | `/api/downloads/cleanup` | Cleanup failed/cancelled items and temp files |
+| POST | `/api/downloads/check-duplicate` | Check duplicate download |
+| POST | `/download` | Start download |
+| POST | `/cancel/<video_id>` | Cancel download |
+| GET | `/download-file/<video_id>` | Download file (active) |
+| GET | `/download-file-by-history/<id>` | Download file (completed) |
 
 ## Troubleshooting
 
@@ -223,7 +270,7 @@ pkill -f "python app.py"
 
 - **Backend**: Flask 3.1.2, Flask-SQLAlchemy 3.1.1, Flask-Login 0.6.3
 - **Database**: SQLite with SQLAlchemy ORM
-- **Downloader**: yt-dlp 2025.10.22
+- **Downloader**: yt-dlp
 - **Frontend**: HTML/CSS/JavaScript (Dark mode UI)
 - **Security**: Werkzeug (password hashing), session-based authentication
 

@@ -1,17 +1,20 @@
-[한글 버전] 🇰🇷 [English Version](README.en.md)
+[한글 버전] [English Version](README.en.md)
 
 # YouTube Downloader
 
-Flask와 yt-dlp를 기반으로 만든 사용자 인증 및 관리자 승인 시스템이 포함된 웹 기반 YouTube 영상 및 플레이리스트 다운로더입니다.
+Flask와 yt-dlp를 기반으로 만든 사용자 인증 및 관리자 승인 시스템이 포함된 웹 기반 YouTube 영상 다운로더입니다.
 
 ## 기능
 
-- 🎥 YouTube 영상 및 플레이리스트 다운로드
+- 🎥 YouTube 단일 영상 다운로드
 - 🎬 다양한 화질 옵션 (4K부터 360p까지)
 - 🎵 오디오 추출 (MP3, M4A)
 - 📊 실시간 진행 상황 및 다운로드 속도 표시
 - 🔄 동시 다운로드 (설정 가능한 제한)
-- 🔔 데스크톱 알림
+- 📋 다운로드 이력 DB 저장 및 검색
+- 🔍 중복 다운로드 감지 및 경고
+- 🖼️ 유튜브 썸네일 자동 표시
+- 🔗 영상 클릭 시 원본 유튜브로 이동
 - 🌙 다크 모드 UI
 - 🔐 SQLite 데이터베이스 기반 사용자 인증
 - 👨‍💼 새 사용자를 위한 관리자 승인 시스템
@@ -121,16 +124,24 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 ### 다운로드 관리
 
-1. YouTube URL 입력 (영상 또는 플레이리스트)
+1. YouTube URL 입력 (단일 영상만 지원, 플레이리스트 불가)
 2. 화질 및 포맷 선택
-3. "Start Download" 클릭
+3. "다운로드 시작" 클릭
 4. 실시간 속도와 함께 진행 상황 모니터링
-5. 다운로드된 파일 확인
+5. 완료 후 다운로드 버튼으로 파일 저장
 
-#### 관리 기능
+### 필터 및 검색
 
-- **Clear Inactive** - 완료/취소된 항목을 목록에서 제거
-- **Clean Storage** - 서버의 모든 다운로드 파일 삭제
+- **전체**: 모든 다운로드 항목 표시
+- **진행중**: 대기/다운로드 중/실패 항목
+- **완료**: 완료된 다운로드 항목
+- **검색**: 영상 제목으로 검색
+
+### 관리 기능
+
+- **정리 버튼**: 실패/취소된 항목 삭제 + 임시 파일 정리
+- **개별 삭제**: 항목과 파일 함께 삭제 가능
+- **중복 감지**: 이미 다운로드한 영상 재다운로드 시 경고
 
 ## 로그 관리
 
@@ -167,6 +178,42 @@ youtube-downloader/
 ├── downloads/                  # 다운로드 파일 디렉토리
 └── logs/                       # 애플리케이션 로그 디렉토리
 ```
+
+## 데이터베이스 모델
+
+### User
+- `id`: 기본 키
+- `username`: 사용자명 (고유)
+- `password`: 해시된 비밀번호
+- `is_approved`: 관리자 승인 여부
+- `is_admin`: 관리자 권한
+- `created_at`: 생성 일시
+
+### DownloadHistory
+- `id`: 기본 키
+- `user_id`: 사용자 ID (외래 키)
+- `url`: 유튜브 URL
+- `video_title`: 영상 제목
+- `filename`: 저장된 파일명
+- `quality`: 화질
+- `format_type`: 포맷 (video, audio_mp3, audio_m4a)
+- `status`: 상태 (completed)
+- `file_size`: 파일 크기 (bytes)
+- `created_at`: 생성 일시
+- `completed_at`: 완료 일시
+
+## API 엔드포인트
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET | `/api/downloads` | 다운로드 목록 조회 (status, q, page 파라미터) |
+| DELETE | `/api/downloads/<id>` | 다운로드 항목 삭제 (delete_file 옵션) |
+| POST | `/api/downloads/cleanup` | 실패/취소 항목 및 임시파일 정리 |
+| POST | `/api/downloads/check-duplicate` | 중복 다운로드 체크 |
+| POST | `/download` | 다운로드 시작 |
+| POST | `/cancel/<video_id>` | 다운로드 취소 |
+| GET | `/download-file/<video_id>` | 파일 다운로드 (진행중) |
+| GET | `/download-file-by-history/<id>` | 파일 다운로드 (완료) |
 
 ## 문제 해결
 
@@ -223,7 +270,7 @@ pkill -f "python app.py"
 
 - **Backend**: Flask 3.1.2, Flask-SQLAlchemy 3.1.1, Flask-Login 0.6.3
 - **Database**: SQLAlchemy ORM을 사용한 SQLite
-- **Downloader**: yt-dlp 2025.10.22
+- **Downloader**: yt-dlp
 - **Frontend**: HTML/CSS/JavaScript (다크 모드 UI)
 - **Security**: Werkzeug (비밀번호 해싱), 세션 기반 인증
 
