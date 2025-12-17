@@ -47,3 +47,6 @@ app.pid
 *.egg-info/
 dist/
 build/
+
+# 기타
+reference/
