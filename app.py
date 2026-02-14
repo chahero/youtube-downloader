@@ -17,7 +17,7 @@ load_dotenv()
 # --- 다운로더 설정 (기존) ---
 DOWNLOAD_FOLDER = os.getenv('DOWNLOAD_FOLDER', './downloads')
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv('MAX_CONCURRENT_DOWNLOADS', 3))
-FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+DEBUG_MODE = os.getenv('DEBUG', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
 
 # --- 환경 변수 ---
 FLASK_SECRET_KEY = os.getenv('SECRET_KEY', 'default_secret_key_for_dev')
@@ -1140,5 +1140,4 @@ if __name__ == '__main__':
 
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', '5002'))
-    debug = os.getenv('DEBUG', 'True').lower() == 'true'
-    app.run(host=host, port=port, debug=debug, threaded=True)
+    app.run(host=host, port=port, debug=DEBUG_MODE, threaded=True)
