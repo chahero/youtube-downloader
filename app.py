@@ -230,8 +230,23 @@ for _ in range(MAX_CONCURRENT_DOWNLOADS):
     worker = threading.Thread(target=download_worker, daemon=True)
     worker.start()
 
+def normalize_youtube_url(url):
+    """YouTube URL 정규화 - 단일 비디오는 list 파라미터 제거"""
+    import re
+
+    # watch?v= 형식 URL (단일 비디오)
+    if 'watch?v=' in url or 'youtu.be/' in url:
+        # list, index, start_radio 등의 파라미터 제거
+        url = re.sub(r'[&?](list|index|start_radio|t|feature)=[^&]*', '', url)
+        # 첫 번째 & 뒤의 & 제거
+        url = re.sub(r'\?&', '?', url)
+
+    return url
+
 def extract_playlist_info(url):
     """플레이리스트 정보 추출"""
+    # URL 정규화
+    url = normalize_youtube_url(url)
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -299,11 +314,13 @@ def start_download():
     url = data.get('url', '').strip()
     quality = data.get('quality', 'best')
     format_type = data.get('format_type', 'video')
-    
+
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
-    
+
     try:
+        # URL 정규화
+        url = normalize_youtube_url(url)
         info = extract_playlist_info(url)
 
         # 플레이리스트 URL 차단
