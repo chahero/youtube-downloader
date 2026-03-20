@@ -1,16 +1,13 @@
 from flask import (
-    Flask, render_template, request, jsonify, send_file,
-    session, redirect, url_for, make_response
+    Flask, render_template, request, jsonify, send_file
 )
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
 import yt_dlp
 import os
 import threading
 from datetime import datetime
 from queue import Queue
 from dotenv import load_dotenv
-from functools import wraps
 
 load_dotenv()
 
@@ -19,12 +16,7 @@ DOWNLOAD_FOLDER = os.getenv('DOWNLOAD_FOLDER', './downloads')
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv('MAX_CONCURRENT_DOWNLOADS', 3))
 DEBUG_MODE = os.getenv('DEBUG', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
 
-# --- 환경 변수 ---
-FLASK_SECRET_KEY = os.getenv('SECRET_KEY', 'default_secret_key_for_dev')
-
 app = Flask(__name__)
-# 세션 관리를 위한 SECRET_KEY 설정
-app.secret_key = FLASK_SECRET_KEY
 
 # --- SQLite 데이터베이스 설정 ---
 instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
@@ -33,26 +25,9 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(instance_path,
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- User 모델 ---
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
-    is_approved = db.Column(db.Boolean, default=False)  # 관리자 승인 여부
-    is_admin = db.Column(db.Boolean, default=False)     # 관리자 권한
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def set_password(self, password):
-        self.password = generate_password_hash(password)
-
-    def check_password(self, password):
-        return check_password_hash(self.password, password)
-
-
 # --- DownloadHistory 모델 ---
 class DownloadHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     url = db.Column(db.String(500), nullable=False)
     video_title = db.Column(db.String(500))
     filename = db.Column(db.String(500))
@@ -62,8 +37,6 @@ class DownloadHistory(db.Model):
     file_size = db.Column(db.Integer)  # bytes
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime)
-
-    user = db.relationship('User', backref=db.backref('downloads', lazy=True))
 
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
@@ -98,10 +71,6 @@ def save_download_history(video_id, status):
 
     try:
         video_data = download_status.get(video_id, {})
-        user_id = video_data.get('user_id')
-
-        if not user_id:
-            return
 
         # 파일 크기 가져오기
         file_size = None
@@ -112,7 +81,6 @@ def save_download_history(video_id, status):
 
         with app.app_context():
             history = DownloadHistory(
-                user_id=user_id,
                 url=video_data.get('url', ''),
                 video_title=video_data.get('video_title', ''),
                 filename=video_data.get('filename'),
@@ -321,191 +289,11 @@ def extract_playlist_info(url):
     except Exception as e:
         raise Exception(f"Failed to extract info: {str(e)}")
 
-# --- 인증 라우트 및 데코레이터 ---
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # 세션에 'current_user' 정보가 없으면 로그인 페이지로 리다이렉트
-        if 'current_user' not in session:
-            # flash('서비스를 이용하려면 로그인이 필요합니다.', 'error') # 다운로더는 AJAX가 많아 flash는 비활성화
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if 'current_user' in session:
-        return redirect(url_for('index'))
-
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-
-        if not username or not password:
-            return render_template('login.html', error='아이디와 비밀번호를 입력하세요.')
-
-        try:
-            # SQLite 데이터베이스에서 사용자 조회
-            user = User.query.filter_by(username=username).first()
-
-            if user and user.check_password(password):
-                # 관리자 승인 여부 확인
-                if not user.is_approved:
-                    return render_template('login.html', error='승인 대기 중인 계정입니다. 관리자의 승인을 기다려주세요.')
-
-                # 세션에 사용자 정보 저장
-                session['current_user'] = {
-                    'id': user.id,
-                    'username': user.username,
-                    'is_admin': user.is_admin
-                }
-                session.permanent = True
-                return redirect(url_for('index'))
-            else:
-                return render_template('login.html', error='아이디 또는 비밀번호가 잘못되었습니다.')
-
-        except Exception as e:
-            return render_template('login.html', error=f'로그인 중 오류가 발생했습니다: {str(e)}')
-
-    return render_template('login.html')
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-# --- Admin 라우트 및 API ---
-@app.route('/admin')
-@login_required
-def admin_dashboard():
-    """관리자 대시보드"""
-    current_user = session.get('current_user', {})
-
-    # 관리자 권한 확인
-    if not current_user.get('is_admin'):
-        return render_template('admin.html', error='관리자만 접근할 수 있습니다.'), 403
-
-    try:
-        # 승인 대기 중인 사용자
-        pending_users = User.query.filter_by(is_approved=False).all()
-        # 승인된 사용자
-        approved_users = User.query.filter_by(is_approved=True).all()
-
-        return render_template('admin.html',
-                             pending_users=pending_users,
-                             approved_users=approved_users,
-                             current_user_id=current_user.get('id'))
-    except Exception as e:
-        return render_template('admin.html', error=f'오류가 발생했습니다: {str(e)}'), 500
-
-@app.route('/api/admin/approve/<int:user_id>', methods=['POST'])
-@login_required
-def approve_user(user_id):
-    """사용자 승인 API"""
-    current_user = session.get('current_user', {})
-
-    # 관리자 권한 확인
-    if not current_user.get('is_admin'):
-        return jsonify({'error': '관리자만 접근할 수 있습니다.'}), 403
-
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'error': '사용자를 찾을 수 없습니다.'}), 404
-
-        user.is_approved = True
-        db.session.commit()
-
-        return jsonify({'success': True, 'message': f'{user.username} 사용자가 승인되었습니다.'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': f'오류가 발생했습니다: {str(e)}'}), 500
-
-@app.route('/api/admin/reject/<int:user_id>', methods=['POST'])
-@login_required
-def reject_user(user_id):
-    """사용자 거절 API"""
-    current_user = session.get('current_user', {})
-
-    # 관리자 권한 확인
-    if not current_user.get('is_admin'):
-        return jsonify({'error': '관리자만 접근할 수 있습니다.'}), 403
-
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'error': '사용자를 찾을 수 없습니다.'}), 404
-
-        # 계정 삭제
-        username = user.username
-        db.session.delete(user)
-        db.session.commit()
-
-        return jsonify({'success': True, 'message': f'{username} 사용자가 거절되었습니다.'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': f'오류가 발생했습니다: {str(e)}'}), 500
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if 'current_user' in session:
-        return redirect(url_for('index'))
-
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        password_confirm = request.form.get('password_confirm')
-
-        if not username or not password or not password_confirm:
-            return render_template('register.html', error='모든 필드를 입력하세요.')
-
-        if password != password_confirm:
-            return render_template('register.html', error='비밀번호가 일치하지 않습니다.')
-
-        if len(password) < 4:
-            return render_template('register.html', error='비밀번호는 4글자 이상이어야 합니다.')
-
-        try:
-            # 중복 체크
-            if User.query.filter_by(username=username).first():
-                return render_template('register.html', error='이미 존재하는 아이디입니다.')
-
-            # 새 사용자 생성
-            new_user = User(username=username)
-            new_user.set_password(password)
-
-            # 첫 번째 사용자는 자동으로 Admin 설정
-            user_count = User.query.count()
-            if user_count == 0:
-                new_user.is_admin = True
-                new_user.is_approved = True
-                message = '첫 번째 관리자 계정으로 생성되었습니다. 로그인하세요.'
-            else:
-                new_user.is_approved = False
-                message = '회원가입 신청이 완료되었습니다. 관리자의 승인을 기다려주세요.'
-
-            db.session.add(new_user)
-            db.session.commit()
-
-            return render_template('register.html', success=message)
-
-        except Exception as e:
-            db.session.rollback()
-            return render_template('register.html', error=f'회원가입 중 오류가 발생했습니다: {str(e)}')
-
-    return render_template('register.html')
-
 @app.route('/')
-@login_required
 def index():
-    # 사용자 이름을 index.html로 전달
-    user_info = session.get('current_user', {})
-    username = user_info.get('username', 'User')
-    is_admin = user_info.get('is_admin', False)
-    return render_template('index.html', max_downloads=MAX_CONCURRENT_DOWNLOADS, username=username, is_admin=is_admin)
+    return render_template('index.html', max_downloads=MAX_CONCURRENT_DOWNLOADS)
 
 @app.route('/download', methods=['POST'])
-@login_required
 def start_download():
     data = request.json
     url = data.get('url', '').strip()
@@ -595,14 +383,11 @@ def start_download():
             })
         else:
             video_id = f"video_{datetime.now().timestamp()}"
-            
+
             cancel_events[video_id] = threading.Event()
-            
+
             with lock:
                 queue_position = active_downloads + download_queue.qsize()
-            
-            # 현재 사용자 ID 가져오기
-            user_id = session.get('current_user', {}).get('id')
 
             if queue_position >= MAX_CONCURRENT_DOWNLOADS:
                 download_status[video_id] = {
@@ -614,8 +399,7 @@ def start_download():
                     'thumbnail': info.get('thumbnail'),
                     'duration': info.get('duration', 0),
                     'quality': quality,
-                    'format_type': format_type,
-                    'user_id': user_id
+                    'format_type': format_type
                 }
             else:
                 download_status[video_id] = {
@@ -627,8 +411,7 @@ def start_download():
                     'thumbnail': info.get('thumbnail'),
                     'duration': info.get('duration', 0),
                     'quality': quality,
-                    'format_type': format_type,
-                    'user_id': user_id
+                    'format_type': format_type
                 }
             
             download_queue.put({
@@ -649,13 +432,11 @@ def start_download():
         return jsonify({'error': str(e)}), 400
 
 @app.route('/status/<video_id>')
-@login_required
 def get_status(video_id):
     status = download_status.get(video_id, {'status': 'not_found'})
     return jsonify(status)
 
 @app.route('/playlist-status/<playlist_id>')
-@login_required
 def get_playlist_status(playlist_id):
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
@@ -687,7 +468,6 @@ def get_playlist_status(playlist_id):
     })
 
 @app.route('/cancel/<video_id>', methods=['POST'])
-@login_required
 def cancel_download(video_id):
     if video_id in cancel_events:
         cancel_events[video_id].set()
@@ -695,7 +475,6 @@ def cancel_download(video_id):
     return jsonify({'error': 'Not found'}), 404
 
 @app.route('/cancel-playlist/<playlist_id>', methods=['POST'])
-@login_required
 def cancel_playlist(playlist_id):
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
@@ -716,7 +495,6 @@ def cancel_playlist(playlist_id):
     })
 
 @app.route('/delete/<video_id>', methods=['DELETE'])
-@login_required
 def delete_download(video_id):
     if video_id in download_status:
         status = download_status[video_id].get('status')
@@ -732,7 +510,6 @@ def delete_download(video_id):
     return jsonify({'error': 'Not found'}), 404
 
 @app.route('/delete-playlist/<playlist_id>', methods=['DELETE'])
-@login_required
 def delete_playlist(playlist_id):
     if playlist_id not in playlist_groups:
         return jsonify({'error': 'Playlist not found'}), 404
@@ -757,7 +534,6 @@ def delete_playlist(playlist_id):
     })
 
 @app.route('/download-file/<video_id>')
-@login_required
 def download_file(video_id):
     if video_id not in download_status:
         return jsonify({'error': 'Not found'}), 404
@@ -780,12 +556,9 @@ def download_file(video_id):
 
 
 @app.route('/download-file-by-history/<int:history_id>')
-@login_required
 def download_file_by_history(history_id):
     """DB 이력에서 파일 다운로드"""
-    user_id = session.get('current_user', {}).get('id')
-
-    history = DownloadHistory.query.filter_by(id=history_id, user_id=user_id).first()
+    history = DownloadHistory.query.filter_by(id=history_id).first()
     if not history:
         return jsonify({'error': 'Not found'}), 404
 
@@ -801,7 +574,6 @@ def download_file_by_history(history_id):
 
 
 @app.route('/clear-inactive', methods=['POST'])
-@login_required
 def clear_inactive():
     inactive_statuses = ['completed', 'cancelled', 'error']
     deleted_videos = []
@@ -831,7 +603,6 @@ def clear_inactive():
     })
     
 @app.route('/clean-storage', methods=['POST'])
-@login_required
 def clean_storage():
     try:
         # 진행 중인 다운로드의 파일명 수집
@@ -864,10 +635,8 @@ def clean_storage():
 
 # --- 통합 다운로드 API ---
 @app.route('/api/downloads')
-@login_required
 def get_downloads():
     """통합 다운로드 목록 조회 (진행중 + 완료)"""
-    user_id = session.get('current_user', {}).get('id')
     status_filter = request.args.get('status', 'all')  # all, active, completed
     search = request.args.get('q', '').strip()
     page = request.args.get('page', 1, type=int)
@@ -879,8 +648,6 @@ def get_downloads():
         # 진행 중인 다운로드 (메모리에서)
         if status_filter in ['all', 'active']:
             for video_id, data in download_status.items():
-                if data.get('user_id') != user_id:
-                    continue
                 if data.get('status') in ['queued', 'downloading', 'error', 'cancelled']:
                     # 검색어 필터
                     if search and search.lower() not in (data.get('video_title', '') or '').lower():
@@ -903,7 +670,7 @@ def get_downloads():
 
         # 완료된 다운로드 (DB에서)
         if status_filter in ['all', 'completed']:
-            query = DownloadHistory.query.filter_by(user_id=user_id, status='completed')
+            query = DownloadHistory.query.filter_by(status='completed')
 
             if search:
                 query = query.filter(DownloadHistory.video_title.ilike(f'%{search}%'))
@@ -956,25 +723,20 @@ def get_downloads():
 
 # --- 기존 이력 API (하위 호환) ---
 @app.route('/api/history')
-@login_required
 def get_download_history():
     """다운로드 이력 조회 (하위 호환용)"""
     return get_downloads()
 
 
 @app.route('/api/downloads/<item_id>', methods=['DELETE'])
-@login_required
 def delete_download_item(item_id):
     """다운로드 항목 삭제 (진행중 또는 완료)"""
-    user_id = session.get('current_user', {}).get('id')
     delete_file = request.args.get('delete_file', 'false').lower() == 'true'
 
     try:
         # 진행 중인 다운로드 (메모리) 확인
         if item_id in download_status:
             data = download_status[item_id]
-            if data.get('user_id') != user_id:
-                return jsonify({'error': '권한이 없습니다.'}), 403
 
             # 다운로드 중이면 취소 먼저
             if data.get('status') in ['downloading', 'queued']:
@@ -997,7 +759,7 @@ def delete_download_item(item_id):
         # 완료된 다운로드 (DB) 확인
         try:
             history_id = int(item_id)
-            history = DownloadHistory.query.filter_by(id=history_id, user_id=user_id).first()
+            history = DownloadHistory.query.filter_by(id=history_id).first()
             if history:
                 # 파일 삭제 옵션
                 if delete_file and history.filename:
@@ -1019,11 +781,8 @@ def delete_download_item(item_id):
 
 
 @app.route('/api/downloads/cleanup', methods=['POST'])
-@login_required
 def cleanup_downloads():
     """정리 기능: 실패/취소 항목 삭제 + 고아 파일 정리"""
-    user_id = session.get('current_user', {}).get('id')
-
     try:
         cleaned_items = 0
         cleaned_files = 0
@@ -1031,7 +790,7 @@ def cleanup_downloads():
         # 1. 메모리에서 실패/취소 항목 삭제
         to_delete = []
         for video_id, data in download_status.items():
-            if data.get('user_id') == user_id and data.get('status') in ['error', 'cancelled']:
+            if data.get('status') in ['error', 'cancelled']:
                 to_delete.append(video_id)
 
         for video_id in to_delete:
@@ -1044,14 +803,14 @@ def cleanup_downloads():
         if os.path.exists(DOWNLOAD_FOLDER):
             # DB에 있는 파일명 목록
             db_filenames = set()
-            histories = DownloadHistory.query.filter_by(user_id=user_id).all()
+            histories = DownloadHistory.query.all()
             for h in histories:
                 if h.filename:
                     db_filenames.add(h.filename)
 
             # 진행 중인 파일명도 포함
             for data in download_status.values():
-                if data.get('user_id') == user_id and data.get('filename'):
+                if data.get('filename'):
                     db_filenames.add(data['filename'])
 
             # 부분 파일 및 고아 파일 삭제
@@ -1077,20 +836,16 @@ def cleanup_downloads():
 
 # --- 기존 API (하위 호환) ---
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
-@login_required
 def delete_history(history_id):
     """다운로드 이력 삭제 (하위 호환)"""
     return delete_download_item(str(history_id))
 
 
 @app.route('/api/history/clear', methods=['POST'])
-@login_required
 def clear_history():
-    """현재 사용자의 모든 다운로드 이력 삭제"""
-    user_id = session.get('current_user', {}).get('id')
-
+    """모든 다운로드 이력 삭제"""
     try:
-        deleted = DownloadHistory.query.filter_by(user_id=user_id).delete()
+        deleted = DownloadHistory.query.delete()
         db.session.commit()
         return jsonify({'message': f'{deleted}개의 이력이 삭제되었습니다.', 'deleted_count': deleted})
     except Exception as e:
@@ -1099,10 +854,8 @@ def clear_history():
 
 
 @app.route('/api/downloads/check-duplicate', methods=['POST'])
-@login_required
 def check_duplicate():
     """중복 다운로드 체크"""
-    user_id = session.get('current_user', {}).get('id')
     data = request.json
     url = data.get('url', '').strip()
 
@@ -1112,7 +865,6 @@ def check_duplicate():
     try:
         # DB에서 같은 URL로 완료된 다운로드 확인
         existing = DownloadHistory.query.filter_by(
-            user_id=user_id,
             url=url,
             status='completed'
         ).first()
