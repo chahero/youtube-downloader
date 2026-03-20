@@ -2,23 +2,21 @@
 
 # YouTube Downloader
 
-A web-based YouTube video downloader with user authentication and admin approval system, built with Flask and yt-dlp.
+A simple, fast web-based YouTube video downloader built with Flask and yt-dlp. No login required - start downloading immediately!
 
 ## Features
 
-- 🎥 Download YouTube single videos
+- 🎥 Download YouTube single videos (no login required)
 - 🎬 Multiple quality options (4K to 360p)
 - 🎵 Audio extraction (MP3, M4A)
 - 📊 Real-time progress and download speed
 - 🔄 Concurrent downloads (configurable limit)
-- 📋 Download history saved to DB with search
+- 📋 Download history saved to DB (shared across all users)
 - 🔍 Duplicate download detection and warning
 - 🖼️ Auto-display YouTube thumbnails
 - 🔗 Click video to open original YouTube
 - 🌙 Dark mode UI
-- 🔐 User authentication with SQLite database
-- 👨‍💼 Admin approval system for new users
-- 🛡️ Role-based access control
+- 📁 File search and management features
 
 ## Quick Start
 
@@ -91,36 +89,10 @@ MAX_CONCURRENT_DOWNLOADS=3
 # Flask settings
 HOST=0.0.0.0
 PORT=5005
-DEBUG=True
-
-# Security
-SECRET_KEY=your-secret-key-here
-```
-
-For production, generate a strong SECRET_KEY:
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
+DEBUG=False
 ```
 
 ## Usage
-
-### Authentication
-
-1. **First Access**: Go to `/register` and create the first account
-   - First user automatically becomes Admin with full approval
-   - Subsequent users need Admin approval to access the service
-
-2. **Login**: Go to `/login` and enter credentials
-   - Only approved users can log in
-   - Pending users see: "Account pending admin approval"
-
-### Admin Dashboard
-
-Admin users can access `/admin` to:
-- View pending user registrations
-- Approve or reject new users
-- View list of approved users
-- Manage user access control
 
 ### Download Management
 
@@ -167,10 +139,7 @@ youtube-downloader/
 ├── .env.example                # Environment configuration template
 ├── .env                        # Environment configuration (local)
 ├── templates/
-│   ├── index.html              # Download interface
-│   ├── login.html              # Login page
-│   ├── register.html           # Registration page
-│   └── admin.html              # Admin dashboard
+│   └── index.html              # Download interface
 ├── static/
 │   └── style.css               # Stylesheet (dark theme)
 ├── instance/
@@ -181,17 +150,8 @@ youtube-downloader/
 
 ## Database Models
 
-### User
+### DownloadHistory (Shared across all users)
 - `id`: Primary key
-- `username`: Username (unique)
-- `password`: Hashed password
-- `is_approved`: Admin approval status
-- `is_admin`: Admin privilege
-- `created_at`: Creation timestamp
-
-### DownloadHistory
-- `id`: Primary key
-- `user_id`: User ID (foreign key)
 - `url`: YouTube URL
 - `video_title`: Video title
 - `filename`: Saved filename
@@ -256,10 +216,6 @@ tail -f logs/app.log
 pkill -f "python app.py"
 ```
 
-**Can't login (pending approval):**
-- Wait for Admin approval at `/admin` dashboard
-- Admin will approve or reject your account
-
 ## Requirements
 
 - Python 3.7+
@@ -268,11 +224,10 @@ pkill -f "python app.py"
 
 ## Tech Stack
 
-- **Backend**: Flask 3.1.2, Flask-SQLAlchemy 3.1.1, Flask-Login 0.6.3
+- **Backend**: Flask 3.1.2, Flask-SQLAlchemy 3.1.1
 - **Database**: SQLite with SQLAlchemy ORM
-- **Downloader**: yt-dlp
+- **Downloader**: yt-dlp (latest version)
 - **Frontend**: HTML/CSS/JavaScript (Dark mode UI)
-- **Security**: Werkzeug (password hashing), session-based authentication
 
 ## License
 
