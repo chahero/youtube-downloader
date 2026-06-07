@@ -1,6 +1,6 @@
 import unittest
 
-from app import build_stt_request_data, build_subtitle_filename, get_subtitle_status
+from app import build_subtitle_filename, build_srt_from_word_timestamps, format_srt_timestamp, get_subtitle_status
 
 
 class SubtitleHelperTests(unittest.TestCase):
@@ -18,11 +18,26 @@ class SubtitleHelperTests(unittest.TestCase):
 
         self.assertEqual(get_subtitle_status(History()), "none")
 
-    def test_build_stt_request_data_enables_vad_without_language(self):
-        data = build_stt_request_data()
+    def test_format_srt_timestamp_uses_subtitle_timestamp_format(self):
+        self.assertEqual(format_srt_timestamp(3723456), "01:02:03,456")
 
-        self.assertEqual(data["vad_filter"], "true")
-        self.assertNotIn("language", data)
+    def test_build_srt_from_word_timestamps_groups_words_by_duration_and_punctuation(self):
+        words = [
+            {"word": "Hello", "start_time": 160, "end_time": 480},
+            {"word": ",", "start_time": 480, "end_time": 480},
+            {"word": "this", "start_time": 1120, "end_time": 1120},
+            {"word": "is", "start_time": 1360, "end_time": 1360},
+            {"word": "short", "start_time": 1760, "end_time": 2000},
+            {"word": ".", "start_time": 2000, "end_time": 2000},
+            {"word": "Next", "start_time": 5200, "end_time": 5600},
+            {"word": "line", "start_time": 5680, "end_time": 6000},
+            {"word": ".", "start_time": 6000, "end_time": 6000},
+        ]
+
+        srt = build_srt_from_word_timestamps(words)
+
+        self.assertIn("00:00:00,160 --> 00:00:02,000\nHello, this is short.", srt)
+        self.assertIn("00:00:05,200 --> 00:00:06,000\nNext line.", srt)
 
 
 if __name__ == "__main__":

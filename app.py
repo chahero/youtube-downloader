@@ -6,7 +6,9 @@ from sqlalchemy import inspect, text
 import yt_dlp
 import os
 import threading
-import requests
+import subprocess
+import tempfile
+import wave
 from datetime import datetime
 from queue import Queue
 from dotenv import load_dotenv
@@ -18,11 +20,13 @@ DOWNLOAD_FOLDER = os.getenv('DOWNLOAD_FOLDER', './downloads')
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv('MAX_CONCURRENT_DOWNLOADS', 3))
 DEBUG_MODE = os.getenv('DEBUG', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
 SUBTITLE_FOLDER = os.getenv('SUBTITLE_FOLDER', './subtitles')
-STT_API_BASE_URL = os.getenv('STT_API_BASE_URL', 'http://192.168.0.67:9010').rstrip('/')
-STT_MODEL = os.getenv('STT_MODEL', 'deepdml/faster-whisper-large-v3-turbo-ct2')
-STT_RESPONSE_FORMAT = os.getenv('STT_RESPONSE_FORMAT', 'srt')
 STT_TIMEOUT_SECONDS = int(os.getenv('STT_TIMEOUT_SECONDS', 1800))
-STT_VAD_FILTER = os.getenv('STT_VAD_FILTER', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
+STT_GRPC_SERVER = os.getenv('STT_GRPC_SERVER', '192.168.0.67:9031')
+STT_LANGUAGE_CODE = os.getenv('STT_LANGUAGE_CODE', os.getenv('STT_LANGUAGE', 'multi'))
+STT_WAV_SAMPLE_RATE = int(os.getenv('STT_WAV_SAMPLE_RATE', 16000))
+STT_MAX_SUBTITLE_SECONDS = float(os.getenv('STT_MAX_SUBTITLE_SECONDS', 5))
+STT_MAX_SUBTITLE_WORDS = int(os.getenv('STT_MAX_SUBTITLE_WORDS', 12))
+STT_ENABLE_AUTOMATIC_PUNCTUATION = os.getenv('STT_ENABLE_AUTOMATIC_PUNCTUATION', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
 
 app = Flask(__name__)
 
@@ -69,12 +73,85 @@ def build_subtitle_filename(history_id, source_filename):
     return f'{history_id}-{safe_base}.srt'
 
 
-def build_stt_request_data():
-    return {
-        'model': STT_MODEL,
-        'response_format': STT_RESPONSE_FORMAT,
-        'vad_filter': str(STT_VAD_FILTER).lower(),
-    }
+def format_srt_timestamp(milliseconds):
+    milliseconds = max(0, int(round(milliseconds)))
+    hours, remainder = divmod(milliseconds, 3600000)
+    minutes, remainder = divmod(remainder, 60000)
+    seconds, milliseconds = divmod(remainder, 1000)
+    return f'{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}'
+
+
+def get_word_field(word, field_name, default=None):
+    if isinstance(word, dict):
+        return word.get(field_name, default)
+    return getattr(word, field_name, default)
+
+
+def is_punctuation_token(text):
+    return bool(text) and all(ch in '.,!?;:)]}\'"' for ch in text)
+
+
+def append_word_text(current_text, word):
+    if not current_text:
+        return word
+    if is_punctuation_token(word):
+        return f'{current_text}{word}'
+    return f'{current_text} {word}'
+
+
+def build_srt_from_word_timestamps(words, max_seconds=None, max_words=None):
+    max_seconds = STT_MAX_SUBTITLE_SECONDS if max_seconds is None else max_seconds
+    max_words = STT_MAX_SUBTITLE_WORDS if max_words is None else max_words
+    entries = []
+    current_text = ''
+    current_start = None
+    current_end = None
+    current_word_count = 0
+
+    def flush():
+        nonlocal current_text, current_start, current_end, current_word_count
+        text_value = current_text.strip()
+        if text_value and current_start is not None and current_end is not None:
+            end_value = max(current_end, current_start + 1)
+            entries.append((current_start, end_value, text_value))
+        current_text = ''
+        current_start = None
+        current_end = None
+        current_word_count = 0
+
+    for item in words:
+        word = str(get_word_field(item, 'word', '') or '').strip()
+        if not word:
+            continue
+
+        start_time = get_word_field(item, 'start_time', current_end or 0)
+        end_time = get_word_field(item, 'end_time', start_time)
+        start_time = int(start_time or 0)
+        end_time = int(end_time or start_time)
+
+        is_punctuation = is_punctuation_token(word)
+        if current_text and not is_punctuation:
+            duration_seconds = (max(end_time, current_end or end_time) - current_start) / 1000
+            if current_word_count >= max_words or duration_seconds > max_seconds:
+                flush()
+
+        if current_start is None:
+            current_start = start_time
+
+        current_text = append_word_text(current_text, word)
+        current_end = max(current_end or end_time, end_time, start_time)
+        if not is_punctuation:
+            current_word_count += 1
+
+        if word in ('.', '?', '!'):
+            flush()
+
+    flush()
+
+    return '\n\n'.join(
+        f'{index}\n{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\n{text}'
+        for index, (start, end, text) in enumerate(entries, 1)
+    ) + ('\n' if entries else '')
 
 
 def ensure_database_schema():
@@ -284,21 +361,93 @@ def download_video(video_id, url, quality='best', format_type='video'):
             cleanup_partial_files(video_title)
 
 
-def request_subtitle_from_stt(source_path):
-    """STT API에 미디어 파일을 업로드하고 SRT 텍스트를 반환"""
-    url = f'{STT_API_BASE_URL}/v1/audio/transcriptions'
-    with open(source_path, 'rb') as file_obj:
-        response = requests.post(
-            url,
-            data=build_stt_request_data(),
-            files={'file': (os.path.basename(source_path), file_obj)},
+def convert_media_to_stt_wav(source_path, wav_path):
+    """Riva ASR용 16kHz mono PCM WAV를 생성한다."""
+    command = [
+        'ffmpeg',
+        '-y',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        source_path,
+        '-ac',
+        '1',
+        '-ar',
+        str(STT_WAV_SAMPLE_RATE),
+        '-c:a',
+        'pcm_s16le',
+        wav_path,
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
             timeout=STT_TIMEOUT_SECONDS,
         )
+    except FileNotFoundError as exc:
+        raise Exception('ffmpeg를 찾을 수 없습니다. ffmpeg 설치 또는 PATH 설정을 확인하세요.') from exc
+    except subprocess.TimeoutExpired as exc:
+        raise Exception('STT용 WAV 변환 시간이 초과되었습니다.') from exc
 
-    if response.status_code != 200:
-        raise Exception(f'STT API error {response.status_code}: {response.text[:500]}')
+    if result.returncode != 0:
+        error_message = (result.stderr or result.stdout or '').strip()
+        raise Exception(f'STT용 WAV 변환 실패: {error_message[:500]}')
 
-    return response.text
+
+def read_wav_frames(wav_path):
+    with wave.open(wav_path, 'rb') as wav_file:
+        sample_rate = wav_file.getframerate()
+        channels = wav_file.getnchannels()
+        sample_width = wav_file.getsampwidth()
+        audio_bytes = wav_file.readframes(wav_file.getnframes())
+
+    if sample_rate != STT_WAV_SAMPLE_RATE or channels != 1 or sample_width != 2:
+        raise Exception('STT WAV 형식이 올바르지 않습니다. 16kHz mono PCM 16-bit가 필요합니다.')
+
+    return audio_bytes
+
+
+def request_subtitle_from_stt(source_path):
+    """Riva gRPC ASR에 미디어를 전송하고 word timestamp 기반 SRT 텍스트를 반환한다."""
+    try:
+        import riva.client as riva
+    except ImportError as exc:
+        raise Exception('nvidia-riva-client 패키지가 설치되어 있지 않습니다.') from exc
+
+    os.makedirs('tmp', exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='subtitle_', dir='tmp') as temp_dir:
+        wav_path = os.path.join(temp_dir, 'input.wav')
+        convert_media_to_stt_wav(source_path, wav_path)
+        audio_bytes = read_wav_frames(wav_path)
+
+        auth = riva.Auth(uri=STT_GRPC_SERVER, use_ssl=False)
+        service = riva.ASRService(auth)
+        config = riva.RecognitionConfig(
+            encoding=riva.AudioEncoding.LINEAR_PCM,
+            sample_rate_hertz=STT_WAV_SAMPLE_RATE,
+            language_code=STT_LANGUAGE_CODE,
+            max_alternatives=1,
+            enable_word_time_offsets=True,
+            enable_automatic_punctuation=STT_ENABLE_AUTOMATIC_PUNCTUATION,
+        )
+        response_future = service.offline_recognize(audio_bytes, config, future=True)
+        response = response_future.result(timeout=STT_TIMEOUT_SECONDS)
+
+    if not response.results or not response.results[0].alternatives:
+        raise Exception('STT 결과가 비어 있습니다.')
+
+    alternative = response.results[0].alternatives[0]
+    if not alternative.words:
+        raise Exception('STT 결과에 word timestamp가 없습니다.')
+
+    subtitle_text = build_srt_from_word_timestamps(alternative.words)
+    if not subtitle_text.strip():
+        raise Exception('SRT 자막을 생성하지 못했습니다.')
+
+    return subtitle_text
 
 
 def mark_subtitle_error(history_id, message):
