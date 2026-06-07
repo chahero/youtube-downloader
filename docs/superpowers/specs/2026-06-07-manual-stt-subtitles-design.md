@@ -115,8 +115,10 @@ Add environment variables with sensible defaults:
 - `STT_RESPONSE_FORMAT=srt`
 - `STT_TIMEOUT_SECONDS=1800`
 - `SUBTITLE_FOLDER=./subtitles`
+- `STT_VAD_FILTER=True`
 
 Do not set a default `language`; automatic detection is required.
+Enable VAD by default to reduce hallucinated subtitles during silence or background-only sections. Keep it configurable because some music-heavy or noisy videos may perform better with VAD disabled.
 
 ## Error Handling
 

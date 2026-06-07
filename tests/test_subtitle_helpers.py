@@ -1,6 +1,6 @@
 import unittest
 
-from app import build_subtitle_filename, get_subtitle_status
+from app import build_stt_request_data, build_subtitle_filename, get_subtitle_status
 
 
 class SubtitleHelperTests(unittest.TestCase):
@@ -17,6 +17,12 @@ class SubtitleHelperTests(unittest.TestCase):
             subtitle_status = None
 
         self.assertEqual(get_subtitle_status(History()), "none")
+
+    def test_build_stt_request_data_enables_vad_without_language(self):
+        data = build_stt_request_data()
+
+        self.assertEqual(data["vad_filter"], "true")
+        self.assertNotIn("language", data)
 
 
 if __name__ == "__main__":

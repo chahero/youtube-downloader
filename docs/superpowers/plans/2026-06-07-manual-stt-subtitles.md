@@ -83,6 +83,7 @@ STT_API_BASE_URL = os.getenv('STT_API_BASE_URL', 'http://192.168.0.67:9010').rst
 STT_MODEL = os.getenv('STT_MODEL', 'deepdml/faster-whisper-large-v3-turbo-ct2')
 STT_RESPONSE_FORMAT = os.getenv('STT_RESPONSE_FORMAT', 'srt')
 STT_TIMEOUT_SECONDS = int(os.getenv('STT_TIMEOUT_SECONDS', 1800))
+STT_VAD_FILTER = os.getenv('STT_VAD_FILTER', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
 ```
 
 Add subtitle fields to `DownloadHistory`:
@@ -124,6 +125,7 @@ STT_API_BASE_URL=http://192.168.0.67:9010
 STT_MODEL=deepdml/faster-whisper-large-v3-turbo-ct2
 STT_RESPONSE_FORMAT=srt
 STT_TIMEOUT_SECONDS=1800
+STT_VAD_FILTER=True
 ```
 
 Update `.gitignore`:
@@ -210,6 +212,7 @@ def request_subtitle_from_stt(source_path):
             data={
                 'model': STT_MODEL,
                 'response_format': STT_RESPONSE_FORMAT,
+                'vad_filter': str(STT_VAD_FILTER).lower(),
             },
             files={'file': (os.path.basename(source_path), file_obj)},
             timeout=STT_TIMEOUT_SECONDS,
