@@ -87,6 +87,22 @@ def get_word_field(word, field_name, default=None):
     return getattr(word, field_name, default)
 
 
+def get_repeated_field(item, field_name):
+    if isinstance(item, dict):
+        return item.get(field_name, []) or []
+    return getattr(item, field_name, []) or []
+
+
+def collect_word_timestamps_from_results(results):
+    words = []
+    for result in results:
+        alternatives = get_repeated_field(result, 'alternatives')
+        if not alternatives:
+            continue
+        words.extend(get_repeated_field(alternatives[0], 'words'))
+    return words
+
+
 def is_punctuation_token(text):
     return bool(text) and all(ch in '.,!?;:)]}\'"' for ch in text)
 
@@ -436,14 +452,14 @@ def request_subtitle_from_stt(source_path):
         response_future = service.offline_recognize(audio_bytes, config, future=True)
         response = response_future.result(timeout=STT_TIMEOUT_SECONDS)
 
-    if not response.results or not response.results[0].alternatives:
+    if not response.results:
         raise Exception('STT 결과가 비어 있습니다.')
 
-    alternative = response.results[0].alternatives[0]
-    if not alternative.words:
+    words = collect_word_timestamps_from_results(response.results)
+    if not words:
         raise Exception('STT 결과에 word timestamp가 없습니다.')
 
-    subtitle_text = build_srt_from_word_timestamps(alternative.words)
+    subtitle_text = build_srt_from_word_timestamps(words)
     if not subtitle_text.strip():
         raise Exception('SRT 자막을 생성하지 못했습니다.')
 

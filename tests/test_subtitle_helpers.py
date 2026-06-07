@@ -1,6 +1,12 @@
 import unittest
 
-from app import build_subtitle_filename, build_srt_from_word_timestamps, format_srt_timestamp, get_subtitle_status
+from app import (
+    build_subtitle_filename,
+    build_srt_from_word_timestamps,
+    collect_word_timestamps_from_results,
+    format_srt_timestamp,
+    get_subtitle_status,
+)
 
 
 class SubtitleHelperTests(unittest.TestCase):
@@ -38,6 +44,16 @@ class SubtitleHelperTests(unittest.TestCase):
 
         self.assertIn("00:00:00,160 --> 00:00:02,000\nHello, this is short.", srt)
         self.assertIn("00:00:05,200 --> 00:00:06,000\nNext line.", srt)
+
+    def test_collect_word_timestamps_from_results_includes_every_result(self):
+        results = [
+            {"alternatives": [{"words": [{"word": "First", "start_time": 0, "end_time": 400}]}]},
+            {"alternatives": [{"words": [{"word": "Second", "start_time": 1200, "end_time": 1800}]}]},
+        ]
+
+        words = collect_word_timestamps_from_results(results)
+
+        self.assertEqual([word["word"] for word in words], ["First", "Second"])
 
 
 if __name__ == "__main__":
