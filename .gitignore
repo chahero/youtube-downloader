@@ -24,6 +24,10 @@ settings.local.json
 downloads/*
 !downloads/.gitkeep
 
+# 생성 자막 파일
+subtitles/*
+!subtitles/.gitkeep
+
 # IDE
 .vscode/
 .idea/

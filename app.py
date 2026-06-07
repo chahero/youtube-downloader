@@ -2,9 +2,11 @@ from flask import (
     Flask, render_template, request, jsonify, send_file
 )
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
 import yt_dlp
 import os
 import threading
+import requests
 from datetime import datetime
 from queue import Queue
 from dotenv import load_dotenv
@@ -15,6 +17,11 @@ load_dotenv()
 DOWNLOAD_FOLDER = os.getenv('DOWNLOAD_FOLDER', './downloads')
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv('MAX_CONCURRENT_DOWNLOADS', 3))
 DEBUG_MODE = os.getenv('DEBUG', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
+SUBTITLE_FOLDER = os.getenv('SUBTITLE_FOLDER', './subtitles')
+STT_API_BASE_URL = os.getenv('STT_API_BASE_URL', 'http://192.168.0.67:9010').rstrip('/')
+STT_MODEL = os.getenv('STT_MODEL', 'deepdml/faster-whisper-large-v3-turbo-ct2')
+STT_RESPONSE_FORMAT = os.getenv('STT_RESPONSE_FORMAT', 'srt')
+STT_TIMEOUT_SECONDS = int(os.getenv('STT_TIMEOUT_SECONDS', 1800))
 
 app = Flask(__name__)
 
@@ -37,10 +44,50 @@ class DownloadHistory(db.Model):
     file_size = db.Column(db.Integer)  # bytes
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime)
+    subtitle_status = db.Column(db.String(20), default='none')
+    subtitle_filename = db.Column(db.String(500))
+    subtitle_error = db.Column(db.String(1000))
+    subtitle_created_at = db.Column(db.DateTime)
 
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+os.makedirs(SUBTITLE_FOLDER, exist_ok=True)
 
 download_status = {}
+
+
+def get_subtitle_status(history):
+    return getattr(history, 'subtitle_status', None) or 'none'
+
+
+def build_subtitle_filename(history_id, source_filename):
+    base = os.path.splitext((source_filename or '').strip())[0].strip()
+    if not base:
+        base = 'subtitle'
+    safe_base = ''.join('_' if ch in '\\/:*?"<>|' else ch for ch in base)
+    safe_base = safe_base.strip(' .') or 'subtitle'
+    return f'{history_id}-{safe_base}.srt'
+
+
+def ensure_database_schema():
+    db.create_all()
+
+    inspector = inspect(db.engine)
+    table_names = set(inspector.get_table_names())
+    if 'download_history' not in table_names:
+        return
+
+    columns = {column['name'] for column in inspector.get_columns('download_history')}
+    column_defs = {
+        'subtitle_status': "VARCHAR(20) DEFAULT 'none'",
+        'subtitle_filename': 'VARCHAR(500)',
+        'subtitle_error': 'VARCHAR(1000)',
+        'subtitle_created_at': 'DATETIME',
+    }
+
+    with db.engine.begin() as conn:
+        for column_name, column_type in column_defs.items():
+            if column_name not in columns:
+                conn.execute(text(f'ALTER TABLE download_history ADD COLUMN {column_name} {column_type}'))
 
 
 def cleanup_partial_files(video_title):
@@ -96,6 +143,7 @@ def save_download_history(video_id, status):
         print(f"Failed to save download history: {e}")
 cancel_events = {}
 download_queue = Queue()
+subtitle_queue = Queue()
 active_downloads = 0
 lock = threading.Lock()
 playlist_groups = {}
@@ -226,9 +274,94 @@ def download_video(video_id, url, quality='best', format_type='video'):
             # 실패 시 부분 파일 삭제
             cleanup_partial_files(video_title)
 
+
+def request_subtitle_from_stt(source_path):
+    """STT API에 미디어 파일을 업로드하고 SRT 텍스트를 반환"""
+    url = f'{STT_API_BASE_URL}/v1/audio/transcriptions'
+    with open(source_path, 'rb') as file_obj:
+        response = requests.post(
+            url,
+            data={
+                'model': STT_MODEL,
+                'response_format': STT_RESPONSE_FORMAT,
+            },
+            files={'file': (os.path.basename(source_path), file_obj)},
+            timeout=STT_TIMEOUT_SECONDS,
+        )
+
+    if response.status_code != 200:
+        raise Exception(f'STT API error {response.status_code}: {response.text[:500]}')
+
+    return response.text
+
+
+def mark_subtitle_error(history_id, message):
+    with app.app_context():
+        history = db.session.get(DownloadHistory, history_id)
+        if not history:
+            return
+        history.subtitle_status = 'error'
+        history.subtitle_error = message[:1000]
+        db.session.commit()
+
+
+def generate_subtitle_for_history(history_id):
+    try:
+        with app.app_context():
+            history = db.session.get(DownloadHistory, history_id)
+            if not history:
+                return
+
+            if not history.filename:
+                raise Exception('다운로드 파일 정보가 없습니다.')
+
+            source_path = os.path.join(DOWNLOAD_FOLDER, history.filename)
+            if not os.path.exists(source_path):
+                raise Exception('원본 다운로드 파일을 찾을 수 없습니다.')
+
+            subtitle_filename = build_subtitle_filename(history.id, history.filename)
+            subtitle_path = os.path.join(SUBTITLE_FOLDER, subtitle_filename)
+
+            history.subtitle_status = 'processing'
+            history.subtitle_error = None
+            db.session.commit()
+
+        subtitle_text = request_subtitle_from_stt(source_path)
+
+        os.makedirs(SUBTITLE_FOLDER, exist_ok=True)
+        with open(subtitle_path, 'w', encoding='utf-8') as subtitle_file:
+            subtitle_file.write(subtitle_text)
+
+        with app.app_context():
+            history = db.session.get(DownloadHistory, history_id)
+            if not history:
+                return
+            history.subtitle_status = 'completed'
+            history.subtitle_filename = subtitle_filename
+            history.subtitle_error = None
+            history.subtitle_created_at = datetime.utcnow()
+            db.session.commit()
+    except Exception as e:
+        mark_subtitle_error(history_id, str(e))
+
+
+def subtitle_worker():
+    while True:
+        history_id = subtitle_queue.get()
+        if history_id is None:
+            break
+        try:
+            generate_subtitle_for_history(history_id)
+        finally:
+            subtitle_queue.task_done()
+
+
 for _ in range(MAX_CONCURRENT_DOWNLOADS):
     worker = threading.Thread(target=download_worker, daemon=True)
     worker.start()
+
+subtitle_worker_thread = threading.Thread(target=subtitle_worker, daemon=True)
+subtitle_worker_thread.start()
 
 def normalize_youtube_url(url):
     """YouTube URL 정규화 - 단일 비디오는 list 파라미터 제거"""
@@ -590,6 +723,58 @@ def download_file_by_history(history_id):
     return send_file(filepath, as_attachment=True, download_name=history.filename)
 
 
+@app.route('/api/downloads/<int:history_id>/subtitle', methods=['POST'])
+def start_subtitle_generation(history_id):
+    """완료된 다운로드 항목의 자막 생성 시작"""
+    history = db.session.get(DownloadHistory, history_id)
+    if not history:
+        return jsonify({'error': '항목을 찾을 수 없습니다.'}), 404
+
+    if history.status != 'completed':
+        return jsonify({'error': '완료된 다운로드만 자막을 생성할 수 있습니다.'}), 400
+
+    if get_subtitle_status(history) in ['queued', 'processing']:
+        return jsonify({'error': '자막 생성이 이미 진행 중입니다.'}), 400
+
+    if not history.filename:
+        return jsonify({'error': '다운로드 파일 정보가 없습니다.'}), 400
+
+    source_path = os.path.join(DOWNLOAD_FOLDER, history.filename)
+    if not os.path.exists(source_path):
+        history.subtitle_status = 'error'
+        history.subtitle_error = '원본 다운로드 파일을 찾을 수 없습니다.'
+        db.session.commit()
+        return jsonify({'error': history.subtitle_error}), 400
+
+    history.subtitle_status = 'queued'
+    history.subtitle_error = None
+    db.session.commit()
+
+    subtitle_queue.put(history_id)
+
+    return jsonify({
+        'message': '자막 생성이 시작되었습니다.',
+        'subtitle_status': 'queued'
+    })
+
+
+@app.route('/subtitle-file-by-history/<int:history_id>')
+def download_subtitle_file_by_history(history_id):
+    """DB 이력에서 생성된 자막 파일 다운로드"""
+    history = db.session.get(DownloadHistory, history_id)
+    if not history:
+        return jsonify({'error': '항목을 찾을 수 없습니다.'}), 404
+
+    if get_subtitle_status(history) != 'completed' or not history.subtitle_filename:
+        return jsonify({'error': '자막 파일이 없습니다.'}), 404
+
+    filepath = os.path.join(SUBTITLE_FOLDER, history.subtitle_filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': '자막 파일이 존재하지 않습니다.'}), 404
+
+    return send_file(filepath, as_attachment=True, download_name=history.subtitle_filename)
+
+
 @app.route('/clear-inactive', methods=['POST'])
 def clear_inactive():
     inactive_statuses = ['completed', 'cancelled', 'error']
@@ -711,7 +896,11 @@ def get_downloads():
                     'filename': h.filename,
                     'file_size': h.file_size,
                     'created_at': h.created_at.isoformat() if h.created_at else None,
-                    'completed_at': h.completed_at.isoformat() if h.completed_at else None
+                    'completed_at': h.completed_at.isoformat() if h.completed_at else None,
+                    'subtitle_status': get_subtitle_status(h),
+                    'subtitle_filename': h.subtitle_filename,
+                    'subtitle_error': h.subtitle_error,
+                    'subtitle_created_at': h.subtitle_created_at.isoformat() if h.subtitle_created_at else None
                 })
 
         # 정렬: 진행 중 먼저, 그 다음 완료
@@ -905,7 +1094,7 @@ def check_duplicate():
 if __name__ == '__main__':
     # 데이터베이스 테이블 생성
     with app.app_context():
-        db.create_all()
+        ensure_database_schema()
 
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', '5002'))

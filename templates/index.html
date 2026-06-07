@@ -187,6 +187,7 @@
                                     ${item.status === 'completed' ? `<span>완료 ${sizeText}</span>` : ''}
                                     ${item.status === 'error' ? `<span class="error-msg">${item.message || '오류 발생'}</span>` : ''}
                                     ${item.status === 'cancelled' ? `<span>취소됨</span>` : ''}
+                                    ${item.subtitle_status === 'error' ? `<span class="error-msg">자막 오류: ${item.subtitle_error || '자막 생성 실패'}</span>` : ''}
                                     ${item.created_at ? `<span class="date">${formatDate(item.created_at)}</span>` : ''}
                                 </div>
                                 ${progressBar}
@@ -202,6 +203,17 @@
 
             if (item.status === 'completed' && item.filename) {
                 buttons += `<button class="download-file-btn" onclick="downloadFile('${item.id}', '${item.type}')">⬇️</button>`;
+            }
+
+            if (item.type === 'completed') {
+                const subtitleStatus = item.subtitle_status || 'none';
+                if (subtitleStatus === 'completed') {
+                    buttons += `<button class="subtitle-download-btn" onclick="downloadSubtitle('${item.id}')">자막</button>`;
+                } else if (subtitleStatus === 'queued' || subtitleStatus === 'processing') {
+                    buttons += `<button class="subtitle-processing-btn" disabled>자막 생성 중</button>`;
+                } else {
+                    buttons += `<button class="subtitle-generate-btn" onclick="generateSubtitle('${item.id}')">자막 생성</button>`;
+                }
             }
 
             if (item.status === 'downloading' || item.status === 'queued') {
@@ -360,6 +372,24 @@
             } else {
                 window.location.href = `/download-file/${itemId}`;
             }
+        }
+
+        async function generateSubtitle(itemId) {
+            try {
+                const response = await fetch(`/api/downloads/${itemId}/subtitle`, { method: 'POST' });
+                const data = await response.json();
+                if (!response.ok) {
+                    alert('자막 오류: ' + (data.error || '자막 생성 요청 실패'));
+                    return;
+                }
+                loadDownloads(false);
+            } catch (error) {
+                alert('자막 오류: ' + error.message);
+            }
+        }
+
+        function downloadSubtitle(itemId) {
+            window.location.href = `/subtitle-file-by-history/${itemId}`;
         }
 
         function retryDownload(url) {

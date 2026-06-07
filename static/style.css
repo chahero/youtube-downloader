@@ -508,12 +508,18 @@ button:disabled {
     flex-shrink: 0;
 }
 
-.cancel-btn, .delete-btn, .download-file-btn {
+.cancel-btn,
+.delete-btn,
+.download-file-btn,
+.subtitle-generate-btn,
+.subtitle-download-btn,
+.subtitle-processing-btn {
     width: auto;
     padding: 4px 10px;
     font-size: 14px;
     min-width: 32px;
     margin: 0;
+    white-space: nowrap;
 }
 
 .download-file-btn {
@@ -522,6 +528,27 @@ button:disabled {
 
 .download-file-btn:hover {
     background: var(--primary-hover-color);
+}
+
+.subtitle-generate-btn {
+    background: #2563eb;
+}
+
+.subtitle-generate-btn:hover {
+    background: #1d4ed8;
+}
+
+.subtitle-download-btn {
+    background: #16a34a;
+}
+
+.subtitle-download-btn:hover {
+    background: #15803d;
+}
+
+.subtitle-processing-btn {
+    background: #52525b;
+    cursor: not-allowed;
 }
 
 .cancel-btn {
