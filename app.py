@@ -5,6 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 import yt_dlp
 import os
+import socket
 import threading
 import subprocess
 import tempfile
@@ -62,6 +63,44 @@ download_status = {}
 
 def get_subtitle_status(history):
     return getattr(history, 'subtitle_status', None) or 'none'
+
+
+def parse_stt_grpc_server(server):
+    host, separator, port = (server or '').rpartition(':')
+    if not separator or not host or not port.isdigit():
+        raise ValueError('STT_GRPC_SERVER는 host:port 형식이어야 합니다.')
+    return host, int(port)
+
+
+def format_stt_exception(error):
+    raw_message = str(error)
+    server = STT_GRPC_SERVER
+    connectivity_markers = (
+        'StatusCode.UNAVAILABLE',
+        'failed to connect',
+        'No route to host',
+        'Connection refused',
+        'Deadline Exceeded',
+        'timed out',
+    )
+    if any(marker in raw_message for marker in connectivity_markers):
+        reason = 'STT 서버에 연결할 수 없습니다.'
+        for marker in ('No route to host', 'Connection refused', 'Deadline Exceeded', 'timed out'):
+            if marker in raw_message:
+                reason = marker
+                break
+        return f'STT 서버 연결 실패: {server} ({reason}). 서버 네트워크, 방화벽, Riva 서비스 상태를 확인하세요.'
+    return raw_message[:1000]
+
+
+def check_stt_tcp_connectivity(server=None, timeout=5):
+    server = server or STT_GRPC_SERVER
+    host, port = parse_stt_grpc_server(server)
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError as exc:
+        raise ConnectionError(f'STT 서버 연결 실패: {server} ({exc}). 서버 네트워크, 방화벽, Riva 서비스 상태를 확인하세요.') from exc
 
 
 def build_subtitle_filename(history_id, source_filename):
@@ -483,6 +522,10 @@ def request_subtitle_from_stt(source_path):
     except ImportError as exc:
         raise Exception('nvidia-riva-client 패키지가 설치되어 있지 않습니다.') from exc
 
+    print(f'[stt] preflight server={STT_GRPC_SERVER} pid={os.getpid()} cwd={os.getcwd()}', flush=True)
+    check_stt_tcp_connectivity()
+    print(f'[stt] tcp preflight ok server={STT_GRPC_SERVER}', flush=True)
+
     os.makedirs('tmp', exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='subtitle_', dir='tmp') as temp_dir:
         wav_path = os.path.join(temp_dir, 'input.wav')
@@ -499,8 +542,11 @@ def request_subtitle_from_stt(source_path):
             enable_word_time_offsets=True,
             enable_automatic_punctuation=STT_ENABLE_AUTOMATIC_PUNCTUATION,
         )
-        response_future = service.offline_recognize(audio_bytes, config, future=True)
-        response = response_future.result(timeout=STT_TIMEOUT_SECONDS)
+        try:
+            response_future = service.offline_recognize(audio_bytes, config, future=True)
+            response = response_future.result(timeout=STT_TIMEOUT_SECONDS)
+        except Exception as exc:
+            raise Exception(format_stt_exception(exc)) from exc
 
     if not response.results:
         raise Exception('STT 결과가 비어 있습니다.')
@@ -567,7 +613,7 @@ def generate_subtitle_for_history(history_id):
             history.subtitle_created_at = datetime.utcnow()
             db.session.commit()
     except Exception as e:
-        mark_subtitle_error(history_id, str(e))
+        mark_subtitle_error(history_id, format_stt_exception(e))
 
 
 def subtitle_worker():

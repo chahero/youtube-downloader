@@ -8,8 +8,10 @@ from app import (
     collect_word_timestamps_from_results,
     cleanup_orphan_subtitle_files,
     delete_subtitle_file_for_history,
+    format_stt_exception,
     format_srt_timestamp,
     get_subtitle_status,
+    parse_stt_grpc_server,
     read_subtitle_text_for_history,
 )
 
@@ -31,6 +33,24 @@ class SubtitleHelperTests(unittest.TestCase):
 
     def test_format_srt_timestamp_uses_subtitle_timestamp_format(self):
         self.assertEqual(format_srt_timestamp(3723456), "01:02:03,456")
+
+    def test_parse_stt_grpc_server_splits_host_and_port(self):
+        self.assertEqual(parse_stt_grpc_server("192.168.0.67:9031"), ("192.168.0.67", 9031))
+
+    def test_format_stt_exception_summarizes_grpc_connectivity_error(self):
+        message = (
+            "<_MultiThreadedRendezvous of RPC that terminated with: "
+            "status = StatusCode.UNAVAILABLE details = \"failed to connect to all addresses; "
+            "last error: FAILED_PRECONDITION: ipv4:192.168.0.67:9031: connect failed: "
+            "addr: ipv4:192.168.0.67:9031 error: No route to host\" >"
+        )
+
+        formatted = format_stt_exception(Exception(message))
+
+        self.assertIn("STT 서버 연결 실패", formatted)
+        self.assertIn("192.168.0.67:9031", formatted)
+        self.assertIn("No route to host", formatted)
+        self.assertNotIn("_MultiThreadedRendezvous", formatted)
 
     def test_build_srt_from_word_timestamps_groups_words_by_duration_and_punctuation(self):
         words = [
