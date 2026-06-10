@@ -94,6 +94,7 @@
         let currentPage = 1;
         let refreshInterval = null;
         let currentSubtitleId = null;
+        let shouldAutoRefresh = false;
 
         const icons = {
             eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
@@ -104,9 +105,8 @@
         // 페이지 로드 시
         document.addEventListener('DOMContentLoaded', function() {
             loadDownloads();
-            // 3초마다 목록 새로고침 (진행 중인 다운로드 상태 업데이트)
             refreshInterval = setInterval(() => {
-                if (currentFilter !== 'completed') {
+                if (shouldAutoRefresh) {
                     loadDownloads(false);
                 }
             }, 2000);
@@ -161,10 +161,20 @@
                 renderDownloadList(data.items);
                 renderPagination(data.page, data.total_pages);
                 updateStatusInfo(data.total);
+                shouldAutoRefresh = hasPendingWork(data.items);
 
             } catch (error) {
                 console.error('Load error:', error);
             }
+        }
+
+        function hasPendingWork(items) {
+            return items.some(item => {
+                const downloadStatus = item.status;
+                const subtitleStatus = item.subtitle_status || 'none';
+                return downloadStatus === 'queued' || downloadStatus === 'downloading' ||
+                    subtitleStatus === 'queued' || subtitleStatus === 'processing';
+            });
         }
 
         function renderDownloadList(items) {
