@@ -73,6 +73,56 @@ def build_subtitle_filename(history_id, source_filename):
     return f'{history_id}-{safe_base}.srt'
 
 
+def get_safe_folder_path(folder, filename):
+    if not filename:
+        return None
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        return None
+    return os.path.join(folder, safe_name)
+
+
+def delete_file_in_folder(folder, filename):
+    filepath = get_safe_folder_path(folder, filename)
+    if not filepath or not os.path.exists(filepath):
+        return 0
+    os.remove(filepath)
+    return 1
+
+
+def delete_subtitle_file_for_history(history, subtitle_folder=None):
+    subtitle_folder = subtitle_folder or SUBTITLE_FOLDER
+    return delete_file_in_folder(subtitle_folder, getattr(history, 'subtitle_filename', None))
+
+
+def read_subtitle_text_for_history(history, subtitle_folder=None):
+    subtitle_folder = subtitle_folder or SUBTITLE_FOLDER
+    filepath = get_safe_folder_path(subtitle_folder, getattr(history, 'subtitle_filename', None))
+    if not filepath or not os.path.exists(filepath):
+        raise FileNotFoundError('자막 파일이 존재하지 않습니다.')
+    with open(filepath, 'r', encoding='utf-8') as subtitle_file:
+        return subtitle_file.read()
+
+
+def cleanup_orphan_subtitle_files(histories, subtitle_folder=None):
+    subtitle_folder = subtitle_folder or SUBTITLE_FOLDER
+    if not os.path.exists(subtitle_folder):
+        return 0
+
+    referenced_files = {
+        os.path.basename(history.subtitle_filename)
+        for history in histories
+        if getattr(history, 'subtitle_filename', None)
+    }
+    deleted_count = 0
+    for filename in os.listdir(subtitle_folder):
+        if filename == '.gitkeep' or not filename.lower().endswith('.srt'):
+            continue
+        if filename not in referenced_files:
+            deleted_count += delete_file_in_folder(subtitle_folder, filename)
+    return deleted_count
+
+
 def format_srt_timestamp(milliseconds):
     milliseconds = max(0, int(round(milliseconds)))
     hours, remainder = divmod(milliseconds, 3600000)
@@ -492,6 +542,7 @@ def generate_subtitle_for_history(history_id):
 
             subtitle_filename = build_subtitle_filename(history.id, history.filename)
             subtitle_path = os.path.join(SUBTITLE_FOLDER, subtitle_filename)
+            previous_subtitle_filename = history.subtitle_filename
 
             history.subtitle_status = 'processing'
             history.subtitle_error = None
@@ -502,6 +553,9 @@ def generate_subtitle_for_history(history_id):
         os.makedirs(SUBTITLE_FOLDER, exist_ok=True)
         with open(subtitle_path, 'w', encoding='utf-8') as subtitle_file:
             subtitle_file.write(subtitle_text)
+
+        if previous_subtitle_filename and previous_subtitle_filename != subtitle_filename:
+            delete_file_in_folder(SUBTITLE_FOLDER, previous_subtitle_filename)
 
         with app.app_context():
             history = db.session.get(DownloadHistory, history_id)
@@ -946,6 +1000,28 @@ def download_subtitle_file_by_history(history_id):
     return send_file(filepath, as_attachment=True, download_name=history.subtitle_filename)
 
 
+@app.route('/api/downloads/<int:history_id>/subtitle-text')
+def get_subtitle_text_by_history(history_id):
+    """DB 이력에서 생성된 자막 파일 내용을 조회"""
+    history = db.session.get(DownloadHistory, history_id)
+    if not history:
+        return jsonify({'error': '항목을 찾을 수 없습니다.'}), 404
+
+    if get_subtitle_status(history) != 'completed' or not history.subtitle_filename:
+        return jsonify({'error': '자막 파일이 없습니다.'}), 404
+
+    try:
+        subtitle_text = read_subtitle_text_for_history(history)
+    except FileNotFoundError:
+        return jsonify({'error': '자막 파일이 존재하지 않습니다.'}), 404
+
+    return jsonify({
+        'subtitle_text': subtitle_text,
+        'subtitle_filename': history.subtitle_filename,
+        'video_title': history.video_title,
+    })
+
+
 @app.route('/clear-inactive', methods=['POST'])
 def clear_inactive():
     inactive_statuses = ['completed', 'cancelled', 'error']
@@ -1140,9 +1216,9 @@ def delete_download_item(item_id):
             if history:
                 # 파일 삭제 옵션
                 if delete_file and history.filename:
-                    filepath = os.path.join(DOWNLOAD_FOLDER, history.filename)
-                    if os.path.exists(filepath):
-                        os.remove(filepath)
+                    delete_file_in_folder(DOWNLOAD_FOLDER, history.filename)
+
+                delete_subtitle_file_for_history(history)
 
                 db.session.delete(history)
                 db.session.commit()
@@ -1163,6 +1239,7 @@ def cleanup_downloads():
     try:
         cleaned_items = 0
         cleaned_files = 0
+        cleaned_subtitles = 0
 
         # 1. 메모리에서 실패/취소 항목 삭제
         to_delete = []
@@ -1202,10 +1279,14 @@ def cleanup_downloads():
                     except:
                         pass
 
+        histories = DownloadHistory.query.all()
+        cleaned_subtitles = cleanup_orphan_subtitle_files(histories)
+
         return jsonify({
-            'message': f'정리 완료: {cleaned_items}개 항목, {cleaned_files}개 파일 삭제',
+            'message': f'정리 완료: {cleaned_items}개 항목, {cleaned_files}개 파일, {cleaned_subtitles}개 자막 파일 삭제',
             'cleaned_items': cleaned_items,
-            'cleaned_files': cleaned_files
+            'cleaned_files': cleaned_files,
+            'cleaned_subtitles': cleaned_subtitles
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1222,9 +1303,15 @@ def delete_history(history_id):
 def clear_history():
     """모든 다운로드 이력 삭제"""
     try:
+        histories = DownloadHistory.query.all()
+        deleted_subtitles = sum(delete_subtitle_file_for_history(history) for history in histories)
         deleted = DownloadHistory.query.delete()
         db.session.commit()
-        return jsonify({'message': f'{deleted}개의 이력이 삭제되었습니다.', 'deleted_count': deleted})
+        return jsonify({
+            'message': f'{deleted}개의 이력과 {deleted_subtitles}개의 자막 파일이 삭제되었습니다.',
+            'deleted_count': deleted,
+            'deleted_subtitles': deleted_subtitles
+        })
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

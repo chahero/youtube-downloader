@@ -512,6 +512,7 @@ button:disabled {
 .delete-btn,
 .download-file-btn,
 .subtitle-generate-btn,
+.subtitle-view-btn,
 .subtitle-download-btn,
 .subtitle-processing-btn {
     width: auto;
@@ -520,6 +521,26 @@ button:disabled {
     min-width: 32px;
     margin: 0;
     white-space: nowrap;
+}
+
+.icon-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+}
+
+.icon-btn svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .download-file-btn {
@@ -536,6 +557,14 @@ button:disabled {
 
 .subtitle-generate-btn:hover {
     background: #1d4ed8;
+}
+
+.subtitle-view-btn {
+    background: #0f766e;
+}
+
+.subtitle-view-btn:hover {
+    background: #0d9488;
 }
 
 .subtitle-download-btn {
@@ -565,6 +594,88 @@ button:disabled {
 
 .delete-btn:hover {
     background: #8b949e;
+}
+
+.close-btn {
+    background: #30363d;
+}
+
+.close-btn:hover {
+    background: #484f58;
+}
+
+.subtitle-viewer {
+    position: fixed;
+    inset: 0;
+    display: none;
+    z-index: 1000;
+}
+
+.subtitle-viewer.open {
+    display: block;
+}
+
+.subtitle-viewer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(1, 4, 9, 0.72);
+}
+
+.subtitle-viewer-dialog {
+    position: relative;
+    width: min(920px, calc(100vw - 32px));
+    max-height: min(760px, calc(100vh - 48px));
+    margin: 24px auto;
+    background: #161b22;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.subtitle-viewer-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.subtitle-viewer-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-color);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.subtitle-viewer-filename {
+    margin-top: 2px;
+    color: var(--muted-text-color);
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.subtitle-viewer-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.subtitle-viewer-content {
+    margin: 0;
+    padding: 16px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #f0f6fc;
+    background: #0d1117;
+    font-family: "Consolas", "SFMono-Regular", monospace;
+    font-size: 14px;
+    line-height: 1.7;
 }
 
 .status {
@@ -944,5 +1055,15 @@ button:disabled {
     .history-meta {
         flex-direction: column;
         gap: 6px;
+    }
+
+    .subtitle-viewer-dialog {
+        width: calc(100vw - 20px);
+        max-height: calc(100vh - 24px);
+        margin: 12px auto;
+    }
+
+    .subtitle-viewer-header {
+        align-items: flex-start;
     }
 }

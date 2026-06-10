@@ -68,10 +68,38 @@
         <div id="pagination" class="pagination"></div>
     </div>
 
+    <div id="subtitle-viewer" class="subtitle-viewer" aria-hidden="true">
+        <div class="subtitle-viewer-backdrop" onclick="closeSubtitleViewer()"></div>
+        <div class="subtitle-viewer-dialog" role="dialog" aria-modal="true" aria-labelledby="subtitle-viewer-title">
+            <div class="subtitle-viewer-header">
+                <div>
+                    <div id="subtitle-viewer-title" class="subtitle-viewer-title">자막</div>
+                    <div id="subtitle-viewer-filename" class="subtitle-viewer-filename"></div>
+                </div>
+                <div class="subtitle-viewer-actions">
+                    <button class="subtitle-download-btn icon-btn" onclick="downloadSubtitleFromViewer()" title="자막 다운로드" aria-label="자막 다운로드">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H4z"/><path d="M8 19h8"/><path d="M9 9H7v2h2"/><path d="M17 9h-2v2h2"/></svg>
+                    </button>
+                    <button class="close-btn icon-btn" onclick="closeSubtitleViewer()" title="닫기" aria-label="닫기">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+            <pre id="subtitle-viewer-content" class="subtitle-viewer-content"></pre>
+        </div>
+    </div>
+
     <script>
         let currentFilter = 'all';
         let currentPage = 1;
         let refreshInterval = null;
+        let currentSubtitleId = null;
+
+        const icons = {
+            eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
+            contentDownload: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H4z"/><path d="m10 8 5 2-5 2V8Z"/><path d="M12 17v4m0 0 3-3m-3 3-3-3"/></svg>',
+            subtitleDownload: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H4z"/><path d="M8 19h8"/><path d="M9 9H7v2h2"/><path d="M17 9h-2v2h2"/></svg>'
+        };
 
         // 페이지 로드 시
         document.addEventListener('DOMContentLoaded', function() {
@@ -82,6 +110,12 @@
                     loadDownloads(false);
                 }
             }, 2000);
+
+            document.addEventListener('keydown', function(event) {
+                if (event.key === 'Escape') {
+                    closeSubtitleViewer();
+                }
+            });
         });
 
         // 포맷 선택 시 화질 옵션 비활성화/활성화
@@ -202,13 +236,14 @@
             let buttons = '';
 
             if (item.status === 'completed' && item.filename) {
-                buttons += `<button class="download-file-btn" onclick="downloadFile('${item.id}', '${item.type}')">⬇️</button>`;
+                buttons += iconButton('download-file-btn content-download-btn', `downloadFile('${item.id}', '${item.type}')`, icons.contentDownload, '컨텐츠 다운로드');
             }
 
             if (item.type === 'completed') {
                 const subtitleStatus = item.subtitle_status || 'none';
                 if (subtitleStatus === 'completed') {
-                    buttons += `<button class="subtitle-download-btn" onclick="downloadSubtitle('${item.id}')">자막</button>`;
+                    buttons += iconButton('subtitle-view-btn', `viewSubtitle('${item.id}')`, icons.eye, '자막 보기');
+                    buttons += iconButton('subtitle-download-btn', `downloadSubtitle('${item.id}')`, icons.subtitleDownload, '자막 다운로드');
                 } else if (subtitleStatus === 'queued' || subtitleStatus === 'processing') {
                     buttons += `<button class="subtitle-processing-btn" disabled>자막 생성 중</button>`;
                 } else {
@@ -230,6 +265,10 @@
             }
 
             return buttons;
+        }
+
+        function iconButton(className, onClick, icon, label) {
+            return `<button class="${className} icon-btn" onclick="${onClick}" title="${label}" aria-label="${label}">${icon}</button>`;
         }
 
         function getQualityBadge(quality, format_type) {
@@ -390,6 +429,45 @@
 
         function downloadSubtitle(itemId) {
             window.location.href = `/subtitle-file-by-history/${itemId}`;
+        }
+
+        async function viewSubtitle(itemId) {
+            currentSubtitleId = itemId;
+            const viewer = document.getElementById('subtitle-viewer');
+            const title = document.getElementById('subtitle-viewer-title');
+            const filename = document.getElementById('subtitle-viewer-filename');
+            const content = document.getElementById('subtitle-viewer-content');
+
+            title.textContent = '자막';
+            filename.textContent = '';
+            content.textContent = '불러오는 중...';
+            viewer.classList.add('open');
+            viewer.setAttribute('aria-hidden', 'false');
+
+            try {
+                const response = await fetch(`/api/downloads/${itemId}/subtitle-text`);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || '자막을 불러오지 못했습니다.');
+                }
+                title.textContent = data.video_title || '자막';
+                filename.textContent = data.subtitle_filename || '';
+                content.textContent = data.subtitle_text || '';
+            } catch (error) {
+                content.textContent = error.message;
+            }
+        }
+
+        function closeSubtitleViewer() {
+            const viewer = document.getElementById('subtitle-viewer');
+            viewer.classList.remove('open');
+            viewer.setAttribute('aria-hidden', 'true');
+        }
+
+        function downloadSubtitleFromViewer() {
+            if (currentSubtitleId) {
+                downloadSubtitle(currentSubtitleId);
+            }
         }
 
         function retryDownload(url) {
